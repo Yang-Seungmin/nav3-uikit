@@ -3,14 +3,18 @@ plugins {
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.android.kmp.library)
+    `maven-publish`
 }
+
+group = "dev.seungmin.nav3"
+version = providers.gradleProperty("nav3.version").getOrElse("0.1.0-SNAPSHOT")
 
 kotlin {
     explicitApi()
 
     android {
         namespace = "dev.seungmin.nav3.uikit"
-        compileSdk = 36
+        compileSdk = 37
         minSdk = 23
     }
     jvm()

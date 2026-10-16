@@ -10,3 +10,6 @@ actual fun launchFlag(name: String): String? = System.getenv(name)
 
 @androidx.compose.runtime.Composable
 actual fun verticalBarEdge(): String? = null
+
+@androidx.compose.runtime.Composable
+actual fun containerPlacement(): String? = null

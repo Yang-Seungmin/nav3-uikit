@@ -5,15 +5,12 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.currentCompositionLocalContext
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.viewinterop.UIKitInteropInteractionMode
-import androidx.compose.ui.viewinterop.UIKitInteropProperties
-import androidx.compose.ui.viewinterop.UIKitViewController
 import androidx.navigation3.runtime.NavEntry
-import androidx.navigation3.scene.DialogSceneStrategy
-import androidx.navigation3.scene.SceneStrategy
 
 @Composable
 internal actual fun <T : Any> PlatformTabDisplay(
@@ -22,7 +19,7 @@ internal actual fun <T : Any> PlatformTabDisplay(
     selectedTab: Int,
     onTabSelected: (index: Int) -> Unit,
     onBack: (tab: Int) -> Unit,
-    sceneStrategies: List<SceneStrategy<T>>,
+    options: NavDisplayOptions<T>,
     tabBar: @Composable () -> Unit,
     modifier: Modifier,
 ) {
@@ -30,27 +27,23 @@ internal actual fun <T : Any> PlatformTabDisplay(
     val currentOnTabSelected by rememberUpdatedState(onTabSelected)
     val currentOnBack by rememberUpdatedState(onBack)
     val configure = LocalNativeRootHost.current?.configure ?: {}
-    val showsDialogs = sceneStrategies.any { it is DialogSceneStrategy<*> }
+    val nativeChanges = remember { mutableIntStateOf(0) }
     val coordinator = remember {
         UIKitTabCoordinator<T>(
             configure = configure,
             onTabSelected = { currentOnTabSelected(it) },
             onBack = { currentOnBack(it) },
+            onNativeChange = { nativeChanges.intValue++ },
         )
     }
+    val overlays = entries.mapIndexed { index, tabEntries ->
+        key(index) { rememberOverlays(tabEntries, options) { currentOnBack(index) } }
+    }
 
-    SideEffect { coordinator.update(tabs, entries, selectedTab, parentLocals, showsDialogs) }
+    // See PlatformNavDisplay: a tab selection or pop the app did not follow is undone here.
+    nativeChanges.intValue
+    SideEffect { coordinator.update(tabs, entries, overlays, selectedTab, parentLocals) }
     DisposableEffect(coordinator) { onDispose { coordinator.dispose() } }
 
-    // In the root of NativeNavigationViewController the container is not embedded in Compose.
-    if (rememberHoistedToRoot(coordinator.tabBarController)) return
-
-    UIKitViewController(
-        factory = { coordinator.tabBarController },
-        modifier = modifier,
-        properties = UIKitInteropProperties(
-            interactionMode = UIKitInteropInteractionMode.NonCooperative,
-            isNativeAccessibilityEnabled = true,
-        ),
-    )
+    NativeContainer(coordinator.tabBarController, modifier)
 }

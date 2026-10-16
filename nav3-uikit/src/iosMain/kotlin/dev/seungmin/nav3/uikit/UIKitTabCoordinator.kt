@@ -1,12 +1,12 @@
 package dev.seungmin.nav3.uikit
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.ui.uikit.ComposeUIViewControllerConfiguration
 import androidx.navigation3.runtime.NavEntry
 import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.ref.WeakReference
 import kotlinx.cinterop.ObjCSignatureOverride
-import platform.UIKit.UIImage
 import platform.UIKit.UITab
 import platform.UIKit.UITabBarController
 import platform.UIKit.UITabBarControllerDelegateProtocol
@@ -15,22 +15,27 @@ import platform.darwin.NSObject
 
 /**
  * Keeps a [UITabBarController] in sync with the tabs of [NativeTabDisplay]. Each tab is a
- * [UIKitNavigationCoordinator], so pushes, pops, and sheets inside a tab work exactly as in
- * [NativeNavDisplay].
+ * [UIKitNavigationCoordinator], so pushes, pops, sheets, and overlays inside a tab work exactly as
+ * in [NativeNavDisplay].
  *
  * Selection follows the same two directions as the back stack: [update] selects the tab the
- * caller asks for, and a tap in the tab bar reports the new index through [onTabSelected].
+ * caller asks for, and a tap in the tab bar reports the new index through [onTabSelected]. After
+ * either kind of native change, [onNativeChange] makes the display call [update] again, which
+ * undoes a change the caller did not follow.
  */
 internal class UIKitTabCoordinator<T : Any>(
     private val configure: ComposeUIViewControllerConfiguration.() -> Unit,
     private val onTabSelected: (index: Int) -> Unit,
     private val onBack: (tab: Int) -> Unit,
+    private val onNativeChange: () -> Unit,
 ) {
     val tabBarController = UITabBarController()
 
     private val navigators = mutableListOf<UIKitNavigationCoordinator<T>>()
     private val uiTabs = mutableListOf<UITab>()
-    private val icons = mutableListOf<String?>()
+
+    /** What each tab's image was made from, so it is only redrawn when that changes. */
+    private val iconSources = mutableListOf<Any?>()
     private var disposed = false
 
     // UIKit holds the delegate weakly, so the coordinator keeps it alive.
@@ -43,9 +48,9 @@ internal class UIKitTabCoordinator<T : Any>(
     fun update(
         tabs: List<NativeTab<T>>,
         entries: List<List<NavEntry<T>>>,
+        overlays: List<Map<Any, @Composable () -> Unit>>,
         selectedTab: Int,
         parentLocals: CompositionLocalContext,
-        showsDialogs: Boolean,
     ) {
         if (disposed) return
         if (tabs.size != navigators.size) rebuild(tabs, parentLocals)
@@ -53,14 +58,15 @@ internal class UIKitTabCoordinator<T : Any>(
         tabs.forEachIndexed { index, tab ->
             val uiTab = uiTabs[index]
             if (uiTab.title != tab.title) uiTab.title = tab.title
-            if (icons[index] != tab.icon) {
-                icons[index] = tab.icon
-                uiTab.image = UIImage.systemImageNamed(tab.icon)
+            val iconSource = tab.systemImage ?: tab.icon
+            if (iconSources[index] != iconSource) {
+                iconSources[index] = iconSource
+                uiTab.image = tabImage(tab)
             }
 
             val navigator = navigators[index]
             navigator.parentLocals.value = parentLocals
-            navigator.setEntries(entries[index], showsDialogs)
+            navigator.setEntries(entries[index], overlays[index])
         }
 
         val wanted = uiTabs[selectedTab]
@@ -76,20 +82,29 @@ internal class UIKitTabCoordinator<T : Any>(
 
     fun onUserSelected(tab: UITab) {
         val index = uiTabs.indexOfFirst { it.identifier == tab.identifier }
-        if (index != -1) onTabSelected(index)
+        if (index == -1) return
+        onTabSelected(index)
+        onNativeChange()
     }
 
     private fun rebuild(tabs: List<NativeTab<T>>, parentLocals: CompositionLocalContext) {
         navigators.forEach { it.dispose() }
         navigators.clear()
         uiTabs.clear()
-        icons.clear()
-        val onBack = onBack // the navigators must not capture this coordinator
+        iconSources.clear()
+        // The navigators must not capture this coordinator.
+        val onBack = onBack
+        val onNativeChange = onNativeChange
         tabs.forEachIndexed { index, tab ->
-            val navigator = UIKitNavigationCoordinator<T>(parentLocals, configure) { onBack(index) }
+            val navigator = UIKitNavigationCoordinator<T>(
+                parentLocals = parentLocals,
+                configure = configure,
+                onBack = { onBack(index) },
+                onNativeChange = onNativeChange,
+            )
             navigators += navigator
             uiTabs += tabFor(index, tab, navigator.navigationController)
-            icons += tab.icon
+            iconSources += tab.systemImage ?: tab.icon
         }
         tabBarController.setTabs(uiTabs.toList(), animated = false)
     }
@@ -97,7 +112,7 @@ internal class UIKitTabCoordinator<T : Any>(
 
 // A top-level function so the provider block, which UIKit keeps, captures only the controller.
 private fun tabFor(index: Int, tab: NativeTab<*>, controller: UIViewController): UITab =
-    UITab(tab.title, UIImage.systemImageNamed(tab.icon), "tab-$index") { controller }
+    UITab(tab.title, tabImage(tab), "tab-$index") { controller }
 
 @OptIn(ExperimentalNativeApi::class)
 private class TabBarDelegate(

@@ -32,9 +32,14 @@ import androidx.navigationevent.NavigationEvent
  *
  * On iOS the transition parameters, [sizeTransform], [contentAlignment],
  * [sceneDecoratorStrategies], and [sharedTransitionScope] have no effect, because UIKit animates
- * the transitions. Of [sceneStrategies], [DialogSceneStrategy] is honored: an entry with
- * [DialogSceneStrategy.dialog] metadata is presented over the screen below it as a Compose dialog.
- * Other strategies are ignored and their entries are pushed.
+ * the transitions. [sceneStrategies] run as they do in `NavDisplay`: an entry that a strategy shows
+ * in an [androidx.navigation3.scene.OverlayScene], such as an entry with [DialogSceneStrategy.dialog]
+ * metadata, is presented over the screens below it with that scene's own content. Every other entry
+ * is pushed on its own.
+ *
+ * The native navigation bar appears only for entries that ask for it, with [NativeNavigation.title]
+ * metadata or [NativeNavigationBarItems]. Screens that draw their own top app bar look the same as
+ * under `NavDisplay`.
  *
  * The back stack stays the source of truth. When the user pops a screen natively (swipe-back, the
  * back button, or dragging a sheet down), [onBack] is called once per removed entry.
@@ -135,10 +140,7 @@ internal class NavDisplayOptions<T : Any>(
     val popTransitionSpec: AnimatedContentTransitionScope<Scene<T>>.() -> ContentTransform,
     val predictivePopTransitionSpec:
         AnimatedContentTransitionScope<Scene<T>>.(@NavigationEvent.SwipeEdge Int) -> ContentTransform,
-) {
-    /** Whether entries with [DialogSceneStrategy.dialog] metadata are shown as dialogs. */
-    val showsDialogs: Boolean get() = sceneStrategies.any { it is DialogSceneStrategy<*> }
-}
+)
 
 @Composable
 internal expect fun <T : Any> PlatformNavDisplay(

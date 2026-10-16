@@ -1,0 +1,225 @@
+import XCTest
+
+/// Shared helpers for the sample's UI tests. Every screen prints the back stack as
+/// "backStack: ..." at the top.
+class SampleUITestCase: XCTestCase {
+    var app: XCUIApplication!
+
+    /// The `NAV3_SAMPLE` value to launch with, or nil for the single-stack sample.
+    var sample: String? { nil }
+
+    override func setUp() {
+        continueAfterFailure = false
+        app = XCUIApplication()
+        if let sample { app.launchEnvironment["NAV3_SAMPLE"] = sample }
+        if let host = ProcessInfo.processInfo.environment["NAV3_HOST"] {
+            app.launchEnvironment["NAV3_HOST"] = host
+        }
+        app.launch()
+    }
+
+    /// The container placement the sample reports for the host the tests run with.
+    var expectedPlacement: String {
+        ProcessInfo.processInfo.environment["NAV3_HOST"] == "interop" ? "container=embedded" : "container=root"
+    }
+
+    func element(_ label: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
+    }
+
+    func tap(_ label: String) {
+        let target = element(label)
+        XCTAssertTrue(target.waitForExistence(timeout: 5), "missing \(label)")
+        target.tap()
+    }
+
+    func expectVisible(_ label: String, file: StaticString = #filePath, line: UInt = #line) {
+        let predicate = NSPredicate(format: "exists == true AND hittable == true")
+        let match = expectation(for: predicate, evaluatedWith: element(label))
+        if XCTWaiter().wait(for: [match], timeout: 5) != .completed {
+            snapshot("failure")
+            XCTFail("expected visible \(label)", file: file, line: line)
+        }
+    }
+
+    func expectBackStack(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
+        expectVisible("backStack: \(expected)", file: file, line: line)
+    }
+
+    func snapshot(_ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    var backButton: XCUIElement { app.buttons["BackButton"] }
+
+    /// On iPhone Duo the back button moves from the navigation bar into the vertical bar.
+    func tapBack() {
+        if backButton.waitForExistence(timeout: 2) && backButton.isHittable {
+            backButton.tap()
+        } else {
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+        }
+    }
+
+    func edgeSwipeBack() {
+        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
+        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
+        start.press(forDuration: 0.05, thenDragTo: end)
+    }
+
+    /// Waits for UIKit transitions that the test cannot observe through labels to finish.
+    func settle() {
+        usleep(1_500_000)
+    }
+}
+
+/// Checks the single-stack sample against what a standard Navigation 3 app expects: the app may
+/// refuse back, guard it with a back handler, show dialog scenes, and draw its own top bar.
+final class StandardAppUITests: SampleUITestCase {
+    private func openLab() {
+        tap("Open lab")
+        expectVisible("Open locked")
+    }
+
+    func testRefusedBackKeepsScreen() {
+        openLab()
+        tap("Open locked")
+        expectVisible("Back is refused")
+
+        tapBack()
+        settle()
+        expectVisible("Back is refused")
+        XCTAssertFalse(element("Open locked").isHittable, "UIKit left the refused screen")
+
+        edgeSwipeBack()
+        settle()
+        expectVisible("Back is refused")
+        XCTAssertFalse(element("Open locked").isHittable, "UIKit left the refused screen")
+
+        tap("Unlock")
+        tapBack()
+        expectVisible("Open locked")
+        expectBackStack("Home > Lab")
+    }
+
+    func testBackHandlerReceivesNativeBack() {
+        openLab()
+        tap("Open editor")
+        tap("Make changes")
+
+        tapBack()
+        expectVisible("Discard changes?")
+        tap("Keep editing")
+
+        edgeSwipeBack()
+        expectVisible("Discard changes?")
+        snapshot("discard-prompt")
+        tap("Discard")
+        expectVisible("Open editor")
+        expectBackStack("Home > Lab")
+
+        // Without unsaved changes the swipe pops as usual.
+        tap("Open editor")
+        expectVisible("No changes")
+        edgeSwipeBack()
+        expectVisible("Open editor")
+    }
+
+    func testDialogSceneShowsOverScreen() {
+        openLab()
+        tap("Open dialog")
+        expectVisible("Close dialog")
+        // The screen below stays in place under the dialog.
+        XCTAssertTrue(element("Open locked").exists)
+        snapshot("dialog")
+        tap("Close dialog")
+        expectVisible("Open dialog")
+
+        // Tapping outside the dialog dismisses it through onBack, as NavDisplay's DialogScene does.
+        tap("Open dialog")
+        expectVisible("Close dialog")
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)).tap()
+        expectVisible("Open dialog")
+        expectBackStack("Home > Lab")
+    }
+
+    func testScreenWithoutBarMetadataShowsNoNativeBar() {
+        openLab()
+        tap("Open plain")
+        expectVisible("Native bar available")
+        settle()
+        XCTAssertFalse(backButton.exists && backButton.isHittable, "native bar shown without being asked for")
+        snapshot("plain")
+        tap("Back")
+        expectVisible("Open plain")
+    }
+
+    func testBarItemsFromContent() {
+        openLab()
+        tap("Open toolbar")
+        XCTAssertTrue(element("Toolbar 0").waitForExistence(timeout: 5))
+        let add = app.buttons["Add"]
+        XCTAssertTrue(add.waitForExistence(timeout: 5))
+        add.tap()
+        expectVisible("Count: 1")
+        XCTAssertTrue(element("Toolbar 1").waitForExistence(timeout: 5))
+        snapshot("toolbar")
+        tapBack()
+        expectVisible("Open toolbar")
+    }
+
+    /// The bar buttons, back actions, and overlays must not keep popped controllers alive.
+    func testLabControllersAreReleased() {
+        openLab()
+        for _ in 0..<2 {
+            tap("Open toolbar")
+            let add = app.buttons["Add"]
+            XCTAssertTrue(add.waitForExistence(timeout: 5))
+            add.tap()
+            tapBack()
+            expectVisible("Open toolbar")
+
+            tap("Open dialog")
+            tap("Close dialog")
+            expectVisible("Open dialog")
+
+            tap("Open editor")
+            tap("Make changes")
+            tapBack()
+            tap("Discard")
+            expectVisible("Open editor")
+        }
+        tapBack()
+        expectBackStack("Home")
+        sleep(2)
+        tap("Live controllers: ?")
+        sleep(3)
+        let live = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH 'Live controllers: '")).firstMatch
+        XCTAssertTrue(live.waitForExistence(timeout: 5))
+        XCTAssertEqual(live.label, "Live controllers: 1", "leaked controllers")
+    }
+}
+
+/// `NAV3_SAMPLE=swap`: a sign-in display that the tab display replaces, as many apps start.
+final class RootSwapUITests: SampleUITestCase {
+    override var sample: String? { "swap" }
+
+    func testReplacingDisplayKeepsContainerInRoot() {
+        XCTAssertTrue(element(expectedPlacement).waitForExistence(timeout: 5))
+        tap("Continue")
+        expectBackStack("Home: Home")
+        settle()
+        XCTAssertTrue(element(expectedPlacement).waitForExistence(timeout: 5), "tab container not placed as expected")
+        snapshot("after-sign-in")
+
+        // The tabs keep working after the swap.
+        tap("Open detail 1")
+        expectBackStack("Home: Home > Detail(id=1)")
+        tapBack()
+        expectBackStack("Home: Home")
+    }
+}

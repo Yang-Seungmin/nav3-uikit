@@ -36,6 +36,7 @@ import androidx.navigation3.runtime.NavKey
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.rememberNavBackStack
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
+import androidx.navigation3.scene.DialogSceneStrategy
 import androidx.savedstate.serialization.SavedStateConfiguration
 import dev.seungmin.nav3.uikit.NativeNavDisplay
 import dev.seungmin.nav3.uikit.NativeNavigation
@@ -71,6 +72,14 @@ internal val config = SavedStateConfiguration {
             subclass(Immersive::class, Immersive.serializer())
             subclass(SearchHome::class, SearchHome.serializer())
             subclass(Profile::class, Profile.serializer())
+            subclass(Lab::class, Lab.serializer())
+            subclass(Locked::class, Locked.serializer())
+            subclass(Editor::class, Editor.serializer())
+            subclass(Confirm::class, Confirm.serializer())
+            subclass(Plain::class, Plain.serializer())
+            subclass(Toolbar::class, Toolbar.serializer())
+            subclass(SignIn::class, SignIn.serializer())
+            subclass(Focus::class, Focus.serializer())
         }
     }
 }
@@ -111,6 +120,7 @@ class DetailViewModel(private val id: Int) : ViewModel() {
 fun App() {
     when (launchFlag("NAV3_SAMPLE")) {
         "tabs" -> TabsApp()
+        "swap" -> SwapApp()
         else -> StackApp()
     }
 }
@@ -125,8 +135,12 @@ private fun StackApp() {
             backStack = backStack,
             modifier = Modifier.fillMaxSize(),
             onBack = {
-                backStack.removeLastOrNull()
-                EventLog.log("onBack -> ${describe()}")
+                if (backStack.lastOrNull() == Locked && LockState.locked) {
+                    EventLog.log("onBack refused")
+                } else {
+                    backStack.removeLastOrNull()
+                    EventLog.log("onBack -> ${describe()}")
+                }
             },
             entryDecorators = when (launchFlag("NAV3_DECORATORS")) {
                 "none" -> emptyList()
@@ -137,7 +151,9 @@ private fun StackApp() {
                     rememberViewModelStoreNavEntryDecorator(),
                 )
             },
+            sceneStrategies = listOf(DialogSceneStrategy()),
             entryProvider = entryProvider {
+                labEntries(backStack, describe)
                 entry<Home>(metadata = NativeNavigation.title("Home", large = true)) {
                     Screen(describe()) {
                         var plain by remember { mutableIntStateOf(0) }
@@ -152,6 +168,7 @@ private fun StackApp() {
                             backStack += Detail(2)
                         }
                         Button("Push ten") { repeat(10) { backStack += Detail(it + 1) } }
+                        Button("Open lab") { backStack += Lab }
                         var live by remember { mutableStateOf<Int?>(null) }
                         val scope = rememberCoroutineScope()
                         Button("Live controllers: ${live ?: "?"}") {

@@ -2,8 +2,12 @@ package dev.seungmin.nav3.uikit
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.RememberObserver
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.uikit.ComposeUIViewControllerConfiguration
 import androidx.compose.ui.window.ComposeUIViewController
@@ -17,17 +21,25 @@ import platform.UIKit.addChildViewController
 import platform.UIKit.didMoveToParentViewController
 import platform.UIKit.removeFromParentViewController
 import platform.UIKit.willMoveToParentViewController
+import platform.darwin.DISPATCH_TIME_NOW
+import platform.darwin.dispatch_after
+import platform.darwin.dispatch_get_main_queue
+import platform.darwin.dispatch_time
+
+private const val ATTACH_RETRY_NANOS = 16_000_000L
 
 /**
  * Root view controller for an app whose screens are shown by [NativeTabDisplay] or
  * [NativeNavDisplay]. Use it in place of `ComposeUIViewController`.
  *
- * The first of those displays composed in [content] does not embed its native container in
- * Compose. Its `UITabBarController` or `UINavigationController` becomes a child of this root,
- * next to the Compose view, and fills the screen; the display's `modifier` is ignored. A native
- * container embedded in Compose works on most iPhones, but on an open iPhone Duo the system does
- * not show its tab bar in the vertical bar. Other displays, and every display when this root is
- * not used, are embedded through UIKit interop as before.
+ * One display at a time does not embed its native container in Compose. Its `UITabBarController`
+ * or `UINavigationController` becomes a child of this root, next to the Compose view, and fills
+ * the screen; the display's `modifier` is ignored. That is the first display composed in
+ * [content], and when it leaves composition, the display that has been waiting longest takes its
+ * place, so swapping one root display for another (a sign-in flow for the main tabs, say) keeps
+ * the new container in the root. A native container embedded in Compose works on most iPhones,
+ * but on an open iPhone Duo the system does not show its tab bar in the vertical bar. Other
+ * displays, and every display when this root is not used, are embedded through UIKit interop.
  *
  * [configure] works as in `ComposeUIViewController`. It configures the root's Compose view and
  * also the controller that hosts each entry of the displays inside it.
@@ -57,47 +69,95 @@ internal class NativeRootHost(
     val configure: ComposeUIViewControllerConfiguration.() -> Unit,
 ) {
     private val root = WeakReference(root)
-    private var owner: Any? = null
+    private var owner: RootClaim? = null
+    private val waiting = mutableListOf<RootClaim>()
 
-    fun reserve(owner: Any): Boolean {
-        if (this.owner != null) return false
-        this.owner = owner
-        return true
+    /** Gives the root to [claim] now if it is free; otherwise [claim] waits for it. */
+    fun request(claim: RootClaim): Boolean {
+        if (owner == null) {
+            owner = claim
+            return true
+        }
+        waiting += claim
+        return false
     }
 
-    fun attach(controller: UIViewController) {
-        root.value?.addFullScreenChild(controller)
+    fun attach(claim: RootClaim, controller: UIViewController) {
+        if (owner !== claim) return
+        val root = root.value ?: return
+        val parent = controller.parentViewController
+        if (parent === root) return
+        if (parent != null) {
+            // The container was embedded until now. Compose removes it from its interop parent
+            // in a transaction at its next render; moving it before that would let the removal
+            // take it out of the root again.
+            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, ATTACH_RETRY_NANOS), dispatch_get_main_queue()) {
+                attach(claim, controller)
+            }
+            return
+        }
+        root.addFullScreenChild(controller)
     }
 
-    fun release(owner: Any, controller: UIViewController) {
-        if (this.owner !== owner) return
-        this.owner = null
-        if (controller.parentViewController != null) {
+    fun release(claim: RootClaim, controller: UIViewController) {
+        waiting.remove(claim)
+        if (owner !== claim) return
+        owner = null
+        if (controller.parentViewController === root.value) {
             controller.willMoveToParentViewController(null)
             controller.view.removeFromSuperview()
             controller.removeFromParentViewController()
         }
+        val next = waiting.removeFirstOrNull() ?: return
+        owner = next
+        next.placement = RootPlacement.Root
     }
 }
 
-/**
- * Places [controller] in the root of [NativeNavigationViewController] when one is available and
- * not yet taken. Returns whether it did; if not, the caller embeds the controller in Compose.
- */
-@Composable
-internal fun rememberHoistedToRoot(controller: UIViewController): Boolean {
-    val host = LocalNativeRootHost.current ?: return false
-    return remember(host, controller) { RootClaim(host, controller) }.granted
+internal enum class RootPlacement {
+    /** Deciding; nothing is shown until the end of the current composition pass. */
+    Pending,
+
+    /** The container sits in the root of [NativeNavigationViewController]. */
+    Root,
+
+    /** The container is embedded in Compose through UIKit interop. */
+    Embedded,
 }
 
-private class RootClaim(
+/**
+ * Where [controller] goes: the root of [NativeNavigationViewController] when one is available,
+ * otherwise Compose. A display that finds the root taken embeds its container and moves it to the
+ * root once the current owner leaves composition.
+ */
+@Composable
+internal fun rememberRootPlacement(controller: UIViewController): RootPlacement {
+    val host = LocalNativeRootHost.current ?: return RootPlacement.Embedded
+    val claim = remember(host, controller) { RootClaim(host, controller) }
+    if (claim.placement == RootPlacement.Root) {
+        DisposableEffect(claim) {
+            host.attach(claim, controller)
+            onDispose {}
+        }
+    }
+    return claim.placement
+}
+
+internal class RootClaim(
     private val host: NativeRootHost,
     private val controller: UIViewController,
 ) : RememberObserver {
-    val granted = host.reserve(this)
+    var placement by mutableStateOf(RootPlacement.Pending)
+
+    init {
+        // The root is usually free on first composition. When it is not, the owner may be a
+        // display leaving in this same pass; Compose sends onForgotten before onRemembered, so
+        // onRemembered can tell whether this claim got the root.
+        if (host.request(this)) placement = RootPlacement.Root
+    }
 
     override fun onRemembered() {
-        if (granted) host.attach(controller)
+        if (placement == RootPlacement.Pending) placement = RootPlacement.Embedded
     }
 
     override fun onForgotten() = host.release(this, controller)

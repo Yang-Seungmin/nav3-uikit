@@ -213,4 +213,23 @@ final class TabNavigationUITests: XCTestCase {
         XCTAssertTrue(live.waitForExistence(timeout: 5))
         XCTAssertEqual(live.label, "Live controllers: 3", "leaked controllers")
     }
+
+    func testContainerPlacement() {
+        let expected = ProcessInfo.processInfo.environment["NAV3_HOST"] == "interop"
+            ? "container=embedded" : "container=root"
+        XCTAssertTrue(element(expected).waitForExistence(timeout: 5))
+    }
+
+    func testTabBarHiddenWhenPushed() {
+        tap("Open focus")
+        expectVisible("Tab bar hidden here")
+        usleep(1_500_000)
+        let search = tabButton("Search")
+        XCTAssertFalse(search.exists && search.isHittable, "tab bar still shown")
+        snapshot("focus")
+        tapBack()
+        expectBackStack("Home: Home")
+        XCTAssertTrue(tabButton("Search").waitForExistence(timeout: 5))
+        XCTAssertTrue(tabButton("Search").isHittable)
+    }
 }

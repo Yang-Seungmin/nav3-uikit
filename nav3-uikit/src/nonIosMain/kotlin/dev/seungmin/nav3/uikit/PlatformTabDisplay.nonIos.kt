@@ -5,8 +5,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.NavEntry
-import androidx.navigation3.scene.SceneStrategy
 import androidx.navigation3.ui.NavDisplay
+import androidx.navigationevent.NavigationEventInfo
+import androidx.navigationevent.compose.NavigationBackHandler
+import androidx.navigationevent.compose.rememberNavigationEventState
 
 @Composable
 internal actual fun <T : Any> PlatformTabDisplay(
@@ -15,7 +17,7 @@ internal actual fun <T : Any> PlatformTabDisplay(
     selectedTab: Int,
     onTabSelected: (index: Int) -> Unit,
     onBack: (tab: Int) -> Unit,
-    sceneStrategies: List<SceneStrategy<T>>,
+    options: NavDisplayOptions<T>,
     tabBar: @Composable () -> Unit,
     modifier: Modifier,
 ) {
@@ -23,10 +25,24 @@ internal actual fun <T : Any> PlatformTabDisplay(
         Box(Modifier.weight(1f)) {
             NavDisplay(
                 entries = entries[selectedTab],
-                sceneStrategies = sceneStrategies,
+                contentAlignment = options.contentAlignment,
+                sceneStrategies = options.sceneStrategies,
+                sceneDecoratorStrategies = options.sceneDecoratorStrategies,
+                sharedTransitionScope = options.sharedTransitionScope,
+                sizeTransform = options.sizeTransform,
+                transitionSpec = options.transitionSpec,
+                popTransitionSpec = options.popTransitionSpec,
+                predictivePopTransitionSpec = options.predictivePopTransitionSpec,
                 onBack = { onBack(selectedTab) },
             )
         }
         tabBar()
     }
+
+    // At the root of another tab, back returns to the first tab instead of leaving the app.
+    NavigationBackHandler(
+        state = rememberNavigationEventState(NavigationEventInfo.None),
+        isBackEnabled = selectedTab != 0 && entries[selectedTab].size <= 1,
+        onBackCompleted = { onTabSelected(0) },
+    )
 }

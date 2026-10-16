@@ -1,47 +1,54 @@
 package dev.seungmin.nav3.uikit
 
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalContext
 import androidx.compose.ui.uikit.ComposeUIViewControllerConfiguration
 import androidx.navigation3.runtime.NavEntry
-import androidx.navigation3.runtime.get
-import androidx.navigation3.scene.DialogSceneStrategy.Companion.DialogKey
 import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.ref.WeakReference
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCSignatureOverride
+import platform.Foundation.NSSelectorFromString
 import platform.UIKit.UIAction
 import platform.UIKit.UINavigationController
 import platform.UIKit.UINavigationControllerDelegateProtocol
 import platform.UIKit.UIViewController
 import platform.UIKit.navigationItem
-import platform.Foundation.NSSelectorFromString
 import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
 /**
- * Keeps a [UINavigationController] (plus a chain of presented sheets and dialogs) in sync with the
- * decorated Navigation 3 entries.
+ * Keeps a [UINavigationController] (plus a chain of presented sheets and overlays) in sync with
+ * the decorated Navigation 3 entries.
  *
  * Direction 1, back stack to UIKit: [setEntries] diffs the entries against the hosted controllers
  * by `contentKey` and position, keeps the common prefix, and replaces the rest.
  *
  * Direction 2, UIKit to back stack: when UIKit removes controllers on its own (swipe-back, the
  * back button, dragging a sheet down), the hosts are dropped and [onBack] is called once per
- * removed entry. The resulting back stack change then diffs to a no-op. When the top entry's
- * content has an enabled back handler, UIKit is not allowed to pop it; the back action goes to
- * that handler instead, as it would under `NavDisplay`.
+ * removed entry. The resulting back stack change then diffs to a no-op. The app may also leave its
+ * back stack as it is; [onNativeChange] then makes the display apply its entries again, which puts
+ * the removed screens back.
+ *
+ * When the top entry's content has an enabled back handler, UIKit is not allowed to pop it; the
+ * back action goes to that handler instead, as it would under `NavDisplay`.
  */
 internal class UIKitNavigationCoordinator<T : Any>(
     parentLocals: CompositionLocalContext,
     configure: ComposeUIViewControllerConfiguration.() -> Unit,
     private val onBack: () -> Unit,
+    private val onNativeChange: () -> Unit,
 ) {
     val navigationController = UINavigationController()
 
     val parentLocals = ParentLocals(parentLocals)
 
-    private val environment = HostEnvironment(this.parentLocals, configure, weakBack(this), weakBackHandlersChanged(this))
+    private val environment = HostEnvironment(
+        parentLocals = this.parentLocals,
+        configure = configure,
+        onEntryChromeChanged = weakly(this) { it.updateTopChrome() },
+    )
 
     private val stack = mutableListOf<EntryHost<T>>()
     private val modals = mutableListOf<EntryHost<T>>()
@@ -49,7 +56,15 @@ internal class UIKitNavigationCoordinator<T : Any>(
     /** Hosts being animated out; their content stays composed until the transition ends. */
     private val retiring = mutableListOf<EntryHost<T>>()
 
+    /**
+     * Hosts UIKit removed on its own. They stay composed until the next [setEntries], so that when
+     * the app keeps their entries, the same hosts go back instead of new ones composing the same
+     * entries while the old content is still in composition.
+     */
+    private val detached = mutableListOf<EntryHost<T>>()
+
     private var latestEntries: List<NavEntry<T>> = emptyList()
+    private var latestOverlays: Map<Any, @Composable () -> Unit> = emptyMap()
     private var modalTransitionInFlight = false
     private var modalRetryScheduled = false
     private var hasApplied = false
@@ -61,16 +76,17 @@ internal class UIKitNavigationCoordinator<T : Any>(
     init {
         navigationController.delegate = navigationDelegate
         navigationController.navigationBar.prefersLargeTitles = true
+        navigationController.setNavigationBarHidden(true, animated = false)
     }
 
-    fun setEntries(entries: List<NavEntry<T>>, showsDialogs: Boolean) {
-        environment.showsDialogs = showsDialogs
-        setEntries(entries)
-    }
-
-    private fun setEntries(entries: List<NavEntry<T>>) {
+    /**
+     * Shows [entries]. [overlays] holds, by content key, the content of each entry that the scene
+     * strategies show in an overlay scene.
+     */
+    fun setEntries(entries: List<NavEntry<T>>, overlays: Map<Any, @Composable () -> Unit>) {
         if (disposed) return
         latestEntries = entries
+        latestOverlays = overlays
         if (modalTransitionInFlight) return // re-applied when the transition completes
 
         val firstModal = entries.indexOfFirst { it.isModal() }.let { if (it == -1) entries.size else it }
@@ -80,28 +96,31 @@ internal class UIKitNavigationCoordinator<T : Any>(
 
         syncStack(entries.subList(0, pushCount), animated)
         syncModals(entries.subList(pushCount, entries.size), animated)
-        updatePopGestures()
+        detached.forEach { it.retire() }
+        detached.clear()
+        updateTopChrome()
         hasApplied = true
     }
 
     fun dispose() {
         disposed = true
         navigationController.delegate = null
-        (stack + modals + retiring).forEach { it.retire() }
+        (stack + modals + retiring + detached).forEach { it.retire() }
         stack.clear()
         modals.clear()
         retiring.clear()
+        detached.clear()
     }
 
     private fun syncStack(entries: List<NavEntry<T>>, animated: Boolean) {
         val common = commonPrefix(stack, entries)
-        for (i in 0 until common) stack[i].update(entries[i])
+        for (i in 0 until common) stack[i].update(entries[i], latestOverlays[entries[i].contentKey])
         if (common == stack.size && common == entries.size) return
 
         val oldTop = stack.lastOrNull()
         val removed = stack.drop(common)
         stack.subList(common, stack.size).clear()
-        entries.drop(common).forEach { stack += EntryHost(it, environment) }
+        entries.drop(common).forEach { stack += reattach(it, overlay = null) ?: EntryHost(it, null, environment) }
         // UIKit shows a back button for any item with a back action, even the root.
         stack.forEachIndexed { index, host ->
             val item = host.viewController.navigationItem
@@ -120,7 +139,7 @@ internal class UIKitNavigationCoordinator<T : Any>(
 
     private fun syncModals(entries: List<NavEntry<T>>, animated: Boolean) {
         val common = commonPrefix(modals, entries)
-        for (i in 0 until common) modals[i].update(entries[i])
+        for (i in 0 until common) modals[i].update(entries[i], latestOverlays[entries[i].contentKey])
 
         if (common < modals.size) {
             // Dismissing the presenter's child dismisses everything presented above it too.
@@ -131,7 +150,7 @@ internal class UIKitNavigationCoordinator<T : Any>(
             presenter.dismissViewControllerAnimated(animated) {
                 removed.forEach { it.retire() }
                 modalTransitionInFlight = false
-                setEntries(latestEntries)
+                setEntries(latestEntries, latestOverlays)
             }
             return
         }
@@ -144,15 +163,24 @@ internal class UIKitNavigationCoordinator<T : Any>(
                 scheduleModalRetry()
                 return
             }
-            val host = EntryHost(entries[common], environment)
+            val entry = entries[common]
+            val overlay = latestOverlays[entry.contentKey]
+            val host = reattach(entry, overlay) ?: EntryHost(entry, overlay, environment)
             host.configureAsModal(this)
             modals += host
             modalTransitionInFlight = true
             presenter.presentViewController(host.viewController, animated) {
                 modalTransitionInFlight = false
-                setEntries(latestEntries) // presents the next modal, if any
+                setEntries(latestEntries, latestOverlays) // presents the next modal, if any
             }
         }
+    }
+
+    /** A host UIKit removed for [entry], if it can show the entry the same way again. */
+    private fun reattach(entry: NavEntry<T>, overlay: (@Composable () -> Unit)?): EntryHost<T>? {
+        val index = detached.indexOfFirst { it.contentKey == entry.contentKey && it.isOverlay == (overlay != null) }
+        if (index == -1) return null
+        return detached.removeAt(index).also { it.update(entry, overlay) }
     }
 
     private fun presenterFor(modalIndex: Int): UIViewController =
@@ -163,27 +191,36 @@ internal class UIKitNavigationCoordinator<T : Any>(
         modalRetryScheduled = true
         dispatch_async(dispatch_get_main_queue()) {
             modalRetryScheduled = false
-            setEntries(latestEntries)
+            setEntries(latestEntries, latestOverlays)
         }
     }
 
     fun onWillShow(viewController: UIViewController) {
         val host = stack.firstOrNull { it.viewController === viewController } ?: return
-        navigationController.setNavigationBarHidden(host.navigationBarHidden, animated = true)
+        navigationController.setNavigationBarHidden(!host.showsNavigationBar, animated = true)
     }
 
     fun onDidShow() {
+        retiring.forEach { it.retire() }
+        retiring.clear()
         val nativeCount = navigationController.viewControllers.size
         if (nativeCount < stack.size) {
+            val top = stack.last()
+            if (top.interceptsBack) {
+                // A pop that bypassed the back action, such as one from the back button's history
+                // menu. Put the screens back and let the entry's back handler decide.
+                navigationController.setViewControllers(stack.map { it.viewController }, animated = true)
+                top.dispatchBack()
+                return
+            }
             // UIKit popped on its own: swipe-back, the back button, or its long-press menu.
             val popped = stack.drop(nativeCount)
             stack.subList(nativeCount, stack.size).clear()
-            popped.forEach { it.retire() }
+            detached += popped
             repeat(popped.size) { onBack() }
+            onNativeChange()
         }
-        retiring.forEach { it.retire() }
-        retiring.clear()
-        updatePopGestures()
+        updateTopChrome()
     }
 
     fun onSheetDismissedByUser(host: EntryHost<T>) {
@@ -191,22 +228,32 @@ internal class UIKitNavigationCoordinator<T : Any>(
         if (index == -1) return
         val removed = modals.drop(index)
         modals.subList(index, modals.size).clear()
-        removed.forEach { it.retire() }
+        detached += removed
         repeat(removed.size) { onBack() }
+        onNativeChange()
     }
 
     /**
-     * UIKit's swipe-back gestures stay off while the top entry handles back itself. Compose's own
-     * edge gesture then delivers the swipe to that handler.
+     * Matches the navigation bar and the swipe-back gestures to the top entry. The gestures stay
+     * off while that entry handles back itself; Compose's own edge gesture then delivers the swipe
+     * to its handler.
      */
     @OptIn(ExperimentalForeignApi::class)
-    fun updatePopGestures() {
+    fun updateTopChrome() {
         if (disposed) return
-        val enabled = stack.lastOrNull()?.interceptsBack != true
+        val top = stack.lastOrNull() ?: return
+        val enabled = !top.interceptsBack
         navigationController.interactivePopGestureRecognizer?.enabled = enabled
         // The full-width content swipe exists from iOS 26.
         if (navigationController.respondsToSelector(NSSelectorFromString("interactiveContentPopGestureRecognizer"))) {
             navigationController.interactiveContentPopGestureRecognizer?.enabled = enabled
+        }
+        // During a push or pop the top view controller is already the incoming one.
+        if (navigationController.topViewController === top.viewController) {
+            val hidden = !top.showsNavigationBar
+            if (navigationController.isNavigationBarHidden() != hidden) {
+                navigationController.setNavigationBarHidden(hidden, animated = hasApplied)
+            }
         }
     }
 
@@ -218,32 +265,20 @@ internal class UIKitNavigationCoordinator<T : Any>(
         }
     }
 
-    /** A dialog asked to close (scrim tap): the app pops it like any other entry. */
-    fun requestBack() {
-        if (!disposed) onBack()
-    }
-
     private fun commonPrefix(hosts: List<EntryHost<T>>, entries: List<NavEntry<T>>): Int {
         var i = 0
         while (i < hosts.size && i < entries.size && hosts[i].contentKey == entries[i].contentKey) i++
         return i
     }
 
-    private fun NavEntry<T>.isModal(): Boolean =
-        isSheet() || (environment.showsDialogs && metadata[DialogKey] != null)
+    private fun NavEntry<T>.isModal(): Boolean = isSheet() || contentKey in latestOverlays
 }
 
 // Top-level functions so the blocks UIKit and hosted content keep capture only weak references.
 @OptIn(ExperimentalNativeApi::class)
-private fun weakBack(coordinator: UIKitNavigationCoordinator<*>): () -> Unit {
-    val weak = WeakReference(coordinator)
-    return { weak.value?.requestBack() }
-}
-
-@OptIn(ExperimentalNativeApi::class)
-private fun weakBackHandlersChanged(coordinator: UIKitNavigationCoordinator<*>): () -> Unit {
-    val weak = WeakReference(coordinator)
-    return { weak.value?.updatePopGestures() }
+private fun <C : Any> weakly(target: C, action: (C) -> Unit): () -> Unit {
+    val weak = WeakReference(target)
+    return { weak.value?.let(action) }
 }
 
 @OptIn(ExperimentalNativeApi::class)

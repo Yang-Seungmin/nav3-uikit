@@ -31,10 +31,14 @@ import dev.seungmin.nav3.uikit.NativeTab
 import dev.seungmin.nav3.uikit.NativeTabDisplay
 import dev.seungmin.nav3.uikit.SheetDetent
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 
 /** Where the system put the vertical bar on iPhone Duo ("leading", "trailing"), or null. */
 @Composable
 expect fun verticalBarEdge(): String?
+
+/** A screen pushed with the tab bar hidden. */
+@Serializable data object Focus : Route
 
 @Composable
 fun TabsApp() {
@@ -80,6 +84,7 @@ fun TabsApp() {
                         Button("Open settings sheet") { current += Settings }
                         Button("Go to Profile tab") { selected = 2 }
                         Button("Push detail 7 in Search tab") { search += Detail(7) }
+                        Button("Open focus") { current += Focus }
                         var live by remember { mutableStateOf<Int?>(null) }
                         val scope = rememberCoroutineScope()
                         Button("Live controllers: ${live ?: "?"}") {
@@ -116,6 +121,11 @@ fun TabsApp() {
                         Button("Close sheet") { current.removeLastOrNull() }
                     }
                 }
+                entry<Focus>(metadata = NativeNavigation.title("Focus") + NativeNavigation.tabBarHidden()) {
+                    TabScreen(names[selected], describe(current)) {
+                        BasicText("Tab bar hidden here", style = TextStyle(fontSize = 22.sp))
+                    }
+                }
                 entry<Immersive>(metadata = NativeNavigation.navigationBarHidden()) {
                     TabScreen(names[selected], describe(current)) {
                         BasicText("No navigation bar here", style = TextStyle(fontSize = 22.sp))
@@ -146,5 +156,10 @@ private fun TabScreen(tab: String, backStack: String, content: @Composable () ->
             )
         }
         content()
+        // Last, so that it does not move the screen's buttons.
+        BasicText(
+            "container=${containerPlacement() ?: "?"}",
+            style = TextStyle(fontSize = 12.sp, color = Color.Gray),
+        )
     }
 }
