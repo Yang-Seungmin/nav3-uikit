@@ -1,4 +1,5 @@
 [versions]
+agp = "9.4.1"
 kotlin = "2.4.20"
 compose-multiplatform = "1.12.1"
 androidx-navigation3 = "1.1.2"
@@ -19,3 +20,4 @@ kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref 
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 compose-multiplatform = { id = "org.jetbrains.compose", version.ref = "compose-multiplatform" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+android-kmp-library = { id = "com.android.kotlin.multiplatform.library", version.ref = "agp" }

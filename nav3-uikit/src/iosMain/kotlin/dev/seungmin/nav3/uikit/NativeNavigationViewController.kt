@@ -5,6 +5,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.uikit.ComposeUIViewControllerConfiguration
 import androidx.compose.ui.window.ComposeUIViewController
 import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.ref.WeakReference
@@ -27,14 +28,20 @@ import platform.UIKit.willMoveToParentViewController
  * container embedded in Compose works on most iPhones, but on an open iPhone Duo the system does
  * not show its tab bar in the vertical bar. Other displays, and every display when this root is
  * not used, are embedded through UIKit interop as before.
+ *
+ * [configure] works as in `ComposeUIViewController`. It configures the root's Compose view and
+ * also the controller that hosts each entry of the displays inside it.
  */
 @OptIn(ExperimentalForeignApi::class)
-public fun NativeNavigationViewController(content: @Composable () -> Unit): UIViewController {
+public fun NativeNavigationViewController(
+    configure: ComposeUIViewControllerConfiguration.() -> Unit = {},
+    content: @Composable () -> Unit,
+): UIViewController {
     val root = UIViewController()
-    val host = NativeRootHost(root)
+    val host = NativeRootHost(root, configure)
     // The content lambda reaches the root only through the host's weak reference, so the root,
     // its Compose child, and this lambda do not form a cycle through Objective-C.
-    val compose = ComposeUIViewController {
+    val compose = ComposeUIViewController(configure) {
         CompositionLocalProvider(LocalNativeRootHost provides host) { content() }
     }
     root.addFullScreenChild(compose)
@@ -45,7 +52,10 @@ internal val LocalNativeRootHost = staticCompositionLocalOf<NativeRootHost?> { n
 
 /** Lets one native container at a time sit directly in the root, above the Compose view. */
 @OptIn(ExperimentalNativeApi::class)
-internal class NativeRootHost(root: UIViewController) {
+internal class NativeRootHost(
+    root: UIViewController,
+    val configure: ComposeUIViewControllerConfiguration.() -> Unit,
+) {
     private val root = WeakReference(root)
     private var owner: Any? = null
 

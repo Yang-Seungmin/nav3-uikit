@@ -1,6 +1,7 @@
 package dev.seungmin.nav3.uikit
 
 import androidx.compose.runtime.CompositionLocalContext
+import androidx.compose.ui.uikit.ComposeUIViewControllerConfiguration
 import androidx.navigation3.runtime.NavEntry
 import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.ref.WeakReference
@@ -21,6 +22,7 @@ import platform.darwin.NSObject
  * caller asks for, and a tap in the tab bar reports the new index through [onTabSelected].
  */
 internal class UIKitTabCoordinator<T : Any>(
+    private val configure: ComposeUIViewControllerConfiguration.() -> Unit,
     private val onTabSelected: (index: Int) -> Unit,
     private val onBack: (tab: Int) -> Unit,
 ) {
@@ -43,6 +45,7 @@ internal class UIKitTabCoordinator<T : Any>(
         entries: List<List<NavEntry<T>>>,
         selectedTab: Int,
         parentLocals: CompositionLocalContext,
+        showsDialogs: Boolean,
     ) {
         if (disposed) return
         if (tabs.size != navigators.size) rebuild(tabs, parentLocals)
@@ -57,7 +60,7 @@ internal class UIKitTabCoordinator<T : Any>(
 
             val navigator = navigators[index]
             navigator.parentLocals.value = parentLocals
-            navigator.setEntries(entries[index])
+            navigator.setEntries(entries[index], showsDialogs)
         }
 
         val wanted = uiTabs[selectedTab]
@@ -83,7 +86,7 @@ internal class UIKitTabCoordinator<T : Any>(
         icons.clear()
         val onBack = onBack // the navigators must not capture this coordinator
         tabs.forEachIndexed { index, tab ->
-            val navigator = UIKitNavigationCoordinator<T>(parentLocals) { onBack(index) }
+            val navigator = UIKitNavigationCoordinator<T>(parentLocals, configure) { onBack(index) }
             navigators += navigator
             uiTabs += tabFor(index, tab, navigator.navigationController)
             icons += tab.icon

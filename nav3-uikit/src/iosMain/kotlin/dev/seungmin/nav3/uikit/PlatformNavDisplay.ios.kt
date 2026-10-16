@@ -12,28 +12,28 @@ import androidx.compose.ui.viewinterop.UIKitInteropInteractionMode
 import androidx.compose.ui.viewinterop.UIKitInteropProperties
 import androidx.compose.ui.viewinterop.UIKitViewController
 import androidx.navigation3.runtime.NavEntry
-import androidx.navigation3.runtime.NavEntryDecorator
-import androidx.navigation3.runtime.rememberDecoratedNavEntries
 
 @Composable
 internal actual fun <T : Any> PlatformNavDisplay(
-    backStack: List<T>,
+    entries: List<NavEntry<T>>,
     modifier: Modifier,
     onBack: () -> Unit,
-    entryDecorators: List<NavEntryDecorator<T>>,
-    entryProvider: (key: T) -> NavEntry<T>,
+    options: NavDisplayOptions<T>,
 ) {
-    // Decorators run here, in the host composition, so Navigation 3's own pop tracking decides
-    // when per-entry state (saveable state, ViewModels) is cleared. Each entry's content is then
-    // composed inside its own UIViewController.
-    val entries = rememberDecoratedNavEntries(backStack, entryDecorators, entryProvider)
+    // The entries were decorated in the host composition, so Navigation 3's own pop tracking
+    // decides when per-entry state (saveable state, ViewModels) is cleared. Each entry's content
+    // is then composed inside its own UIViewController.
     val parentLocals = currentCompositionLocalContext
     val currentOnBack by rememberUpdatedState(onBack)
-    val coordinator = remember { UIKitNavigationCoordinator<T>(parentLocals) { currentOnBack() } }
+    val configure = LocalNativeRootHost.current?.configure ?: {}
+    val coordinator = remember {
+        UIKitNavigationCoordinator<T>(parentLocals, configure) { currentOnBack() }
+    }
+    val showsDialogs = options.showsDialogs
 
     SideEffect {
         coordinator.parentLocals.value = parentLocals
-        coordinator.setEntries(entries)
+        coordinator.setEntries(entries, showsDialogs)
     }
     DisposableEffect(coordinator) { onDispose { coordinator.dispose() } }
 

@@ -1,50 +1,61 @@
 package dev.seungmin.nav3.uikit
 
 import androidx.compose.runtime.CompositionLocalContext
+import androidx.compose.ui.uikit.ComposeUIViewControllerConfiguration
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.get
+import androidx.navigation3.scene.DialogSceneStrategy.Companion.DialogKey
 import kotlin.experimental.ExperimentalNativeApi
 import kotlin.native.ref.WeakReference
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCSignatureOverride
+import platform.UIKit.UIAction
 import platform.UIKit.UINavigationController
 import platform.UIKit.UINavigationControllerDelegateProtocol
 import platform.UIKit.UIViewController
+import platform.UIKit.navigationItem
+import platform.Foundation.NSSelectorFromString
 import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
 /**
- * Keeps a [UINavigationController] (plus a chain of presented sheets) in sync with the decorated
- * Navigation 3 entries.
+ * Keeps a [UINavigationController] (plus a chain of presented sheets and dialogs) in sync with the
+ * decorated Navigation 3 entries.
  *
  * Direction 1, back stack to UIKit: [setEntries] diffs the entries against the hosted controllers
  * by `contentKey` and position, keeps the common prefix, and replaces the rest.
  *
  * Direction 2, UIKit to back stack: when UIKit removes controllers on its own (swipe-back, the
  * back button, dragging a sheet down), the hosts are dropped and [onBack] is called once per
- * removed entry. The resulting back stack change then diffs to a no-op.
+ * removed entry. The resulting back stack change then diffs to a no-op. When the top entry's
+ * content has an enabled back handler, UIKit is not allowed to pop it; the back action goes to
+ * that handler instead, as it would under `NavDisplay`.
  */
 internal class UIKitNavigationCoordinator<T : Any>(
     parentLocals: CompositionLocalContext,
+    configure: ComposeUIViewControllerConfiguration.() -> Unit,
     private val onBack: () -> Unit,
 ) {
     val navigationController = UINavigationController()
 
     val parentLocals = ParentLocals(parentLocals)
 
+    private val environment = HostEnvironment(this.parentLocals, configure, weakBack(this), weakBackHandlersChanged(this))
+
     private val stack = mutableListOf<EntryHost<T>>()
-    private val sheets = mutableListOf<EntryHost<T>>()
+    private val modals = mutableListOf<EntryHost<T>>()
 
     /** Hosts being animated out; their content stays composed until the transition ends. */
     private val retiring = mutableListOf<EntryHost<T>>()
 
     private var latestEntries: List<NavEntry<T>> = emptyList()
-    private var sheetTransitionInFlight = false
-    private var sheetRetryScheduled = false
+    private var modalTransitionInFlight = false
+    private var modalRetryScheduled = false
     private var hasApplied = false
     private var disposed = false
 
-    // UIKit holds the delegate weakly, so the coordinator keeps it alive.
+    // UIKit holds delegates weakly, so the coordinator keeps them alive.
     private val navigationDelegate = NavigationDelegate(this)
 
     init {
@@ -52,27 +63,33 @@ internal class UIKitNavigationCoordinator<T : Any>(
         navigationController.navigationBar.prefersLargeTitles = true
     }
 
-    fun setEntries(entries: List<NavEntry<T>>) {
+    fun setEntries(entries: List<NavEntry<T>>, showsDialogs: Boolean) {
+        environment.showsDialogs = showsDialogs
+        setEntries(entries)
+    }
+
+    private fun setEntries(entries: List<NavEntry<T>>) {
         if (disposed) return
         latestEntries = entries
-        if (sheetTransitionInFlight) return // re-applied when the transition completes
+        if (modalTransitionInFlight) return // re-applied when the transition completes
 
-        val firstSheet = entries.indexOfFirst { it.isSheet() }.let { if (it == -1) entries.size else it }
-        // The root entry is always pushed; there is nothing to present a sheet from otherwise.
-        val pushCount = if (entries.isEmpty()) 0 else maxOf(firstSheet, 1)
+        val firstModal = entries.indexOfFirst { it.isModal() }.let { if (it == -1) entries.size else it }
+        // The root entry is always pushed; there is nothing to present a modal from otherwise.
+        val pushCount = if (entries.isEmpty()) 0 else maxOf(firstModal, 1)
         val animated = hasApplied && navigationController.view.window != null
 
         syncStack(entries.subList(0, pushCount), animated)
-        syncSheets(entries.subList(pushCount, entries.size), animated)
+        syncModals(entries.subList(pushCount, entries.size), animated)
+        updatePopGestures()
         hasApplied = true
     }
 
     fun dispose() {
         disposed = true
         navigationController.delegate = null
-        (stack + sheets + retiring).forEach { it.retire() }
+        (stack + modals + retiring).forEach { it.retire() }
         stack.clear()
-        sheets.clear()
+        modals.clear()
         retiring.clear()
     }
 
@@ -84,7 +101,16 @@ internal class UIKitNavigationCoordinator<T : Any>(
         val oldTop = stack.lastOrNull()
         val removed = stack.drop(common)
         stack.subList(common, stack.size).clear()
-        entries.drop(common).forEach { stack += EntryHost(it, parentLocals) }
+        entries.drop(common).forEach { stack += EntryHost(it, environment) }
+        // UIKit shows a back button for any item with a back action, even the root.
+        stack.forEachIndexed { index, host ->
+            val item = host.viewController.navigationItem
+            if (index == 0) {
+                item.backAction = null
+            } else if (item.backAction == null) {
+                item.backAction = backAction(this, host)
+            }
+        }
 
         // Only a change of the top controller produces a transition (and a didShow callback).
         val transition = animated && stack.lastOrNull() !== oldTop
@@ -92,19 +118,19 @@ internal class UIKitNavigationCoordinator<T : Any>(
         if (transition) retiring += removed else removed.forEach { it.retire() }
     }
 
-    private fun syncSheets(entries: List<NavEntry<T>>, animated: Boolean) {
-        val common = commonPrefix(sheets, entries)
-        for (i in 0 until common) sheets[i].update(entries[i])
+    private fun syncModals(entries: List<NavEntry<T>>, animated: Boolean) {
+        val common = commonPrefix(modals, entries)
+        for (i in 0 until common) modals[i].update(entries[i])
 
-        if (common < sheets.size) {
+        if (common < modals.size) {
             // Dismissing the presenter's child dismisses everything presented above it too.
             val presenter = presenterFor(common)
-            val removed = sheets.drop(common)
-            sheets.subList(common, sheets.size).clear()
-            sheetTransitionInFlight = true
+            val removed = modals.drop(common)
+            modals.subList(common, modals.size).clear()
+            modalTransitionInFlight = true
             presenter.dismissViewControllerAnimated(animated) {
                 removed.forEach { it.retire() }
-                sheetTransitionInFlight = false
+                modalTransitionInFlight = false
                 setEntries(latestEntries)
             }
             return
@@ -115,28 +141,28 @@ internal class UIKitNavigationCoordinator<T : Any>(
             if (presenter.view.window == null) {
                 // Not attached yet (e.g. the initial back stack ends with a sheet). Retry on the
                 // next main-loop turn.
-                scheduleSheetRetry()
+                scheduleModalRetry()
                 return
             }
-            val host = EntryHost(entries[common], parentLocals)
-            host.configureAsSheet(this)
-            sheets += host
-            sheetTransitionInFlight = true
+            val host = EntryHost(entries[common], environment)
+            host.configureAsModal(this)
+            modals += host
+            modalTransitionInFlight = true
             presenter.presentViewController(host.viewController, animated) {
-                sheetTransitionInFlight = false
-                setEntries(latestEntries) // presents the next sheet, if any
+                modalTransitionInFlight = false
+                setEntries(latestEntries) // presents the next modal, if any
             }
         }
     }
 
-    private fun presenterFor(sheetIndex: Int): UIViewController =
-        if (sheetIndex == 0) navigationController else sheets[sheetIndex - 1].viewController
+    private fun presenterFor(modalIndex: Int): UIViewController =
+        if (modalIndex == 0) navigationController else modals[modalIndex - 1].viewController
 
-    private fun scheduleSheetRetry() {
-        if (sheetRetryScheduled) return
-        sheetRetryScheduled = true
+    private fun scheduleModalRetry() {
+        if (modalRetryScheduled) return
+        modalRetryScheduled = true
         dispatch_async(dispatch_get_main_queue()) {
-            sheetRetryScheduled = false
+            modalRetryScheduled = false
             setEntries(latestEntries)
         }
     }
@@ -157,15 +183,44 @@ internal class UIKitNavigationCoordinator<T : Any>(
         }
         retiring.forEach { it.retire() }
         retiring.clear()
+        updatePopGestures()
     }
 
     fun onSheetDismissedByUser(host: EntryHost<T>) {
-        val index = sheets.indexOf(host)
+        val index = modals.indexOf(host)
         if (index == -1) return
-        val removed = sheets.drop(index)
-        sheets.subList(index, sheets.size).clear()
+        val removed = modals.drop(index)
+        modals.subList(index, modals.size).clear()
         removed.forEach { it.retire() }
         repeat(removed.size) { onBack() }
+    }
+
+    /**
+     * UIKit's swipe-back gestures stay off while the top entry handles back itself. Compose's own
+     * edge gesture then delivers the swipe to that handler.
+     */
+    @OptIn(ExperimentalForeignApi::class)
+    fun updatePopGestures() {
+        if (disposed) return
+        val enabled = stack.lastOrNull()?.interceptsBack != true
+        navigationController.interactivePopGestureRecognizer?.enabled = enabled
+        // The full-width content swipe exists from iOS 26.
+        if (navigationController.respondsToSelector(NSSelectorFromString("interactiveContentPopGestureRecognizer"))) {
+            navigationController.interactiveContentPopGestureRecognizer?.enabled = enabled
+        }
+    }
+
+    fun onBackButton(host: EntryHost<T>) {
+        if (host.interceptsBack) {
+            host.dispatchBack()
+        } else {
+            navigationController.popViewControllerAnimated(true)
+        }
+    }
+
+    /** A dialog asked to close (scrim tap): the app pops it like any other entry. */
+    fun requestBack() {
+        if (!disposed) onBack()
     }
 
     private fun commonPrefix(hosts: List<EntryHost<T>>, entries: List<NavEntry<T>>): Int {
@@ -174,8 +229,31 @@ internal class UIKitNavigationCoordinator<T : Any>(
         return i
     }
 
-    private fun NavEntry<T>.isSheet(): Boolean =
-        metadata[NativeNavigation.Presentation] is NativePresentation.Sheet
+    private fun NavEntry<T>.isModal(): Boolean =
+        isSheet() || (environment.showsDialogs && metadata[DialogKey] != null)
+}
+
+// Top-level functions so the blocks UIKit and hosted content keep capture only weak references.
+@OptIn(ExperimentalNativeApi::class)
+private fun weakBack(coordinator: UIKitNavigationCoordinator<*>): () -> Unit {
+    val weak = WeakReference(coordinator)
+    return { weak.value?.requestBack() }
+}
+
+@OptIn(ExperimentalNativeApi::class)
+private fun weakBackHandlersChanged(coordinator: UIKitNavigationCoordinator<*>): () -> Unit {
+    val weak = WeakReference(coordinator)
+    return { weak.value?.updatePopGestures() }
+}
+
+@OptIn(ExperimentalNativeApi::class)
+private fun <T : Any> backAction(coordinator: UIKitNavigationCoordinator<T>, host: EntryHost<T>): UIAction {
+    val weakCoordinator = WeakReference(coordinator)
+    val weakHost = WeakReference(host)
+    return UIAction.actionWithHandler { _ ->
+        val h = weakHost.value
+        if (h != null) weakCoordinator.value?.onBackButton(h)
+    }
 }
 
 @OptIn(ExperimentalNativeApi::class)

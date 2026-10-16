@@ -12,6 +12,8 @@ import androidx.compose.ui.viewinterop.UIKitInteropInteractionMode
 import androidx.compose.ui.viewinterop.UIKitInteropProperties
 import androidx.compose.ui.viewinterop.UIKitViewController
 import androidx.navigation3.runtime.NavEntry
+import androidx.navigation3.scene.DialogSceneStrategy
+import androidx.navigation3.scene.SceneStrategy
 
 @Composable
 internal actual fun <T : Any> PlatformTabDisplay(
@@ -20,19 +22,24 @@ internal actual fun <T : Any> PlatformTabDisplay(
     selectedTab: Int,
     onTabSelected: (index: Int) -> Unit,
     onBack: (tab: Int) -> Unit,
+    sceneStrategies: List<SceneStrategy<T>>,
+    tabBar: @Composable () -> Unit,
     modifier: Modifier,
 ) {
     val parentLocals = currentCompositionLocalContext
     val currentOnTabSelected by rememberUpdatedState(onTabSelected)
     val currentOnBack by rememberUpdatedState(onBack)
+    val configure = LocalNativeRootHost.current?.configure ?: {}
+    val showsDialogs = sceneStrategies.any { it is DialogSceneStrategy<*> }
     val coordinator = remember {
         UIKitTabCoordinator<T>(
+            configure = configure,
             onTabSelected = { currentOnTabSelected(it) },
             onBack = { currentOnBack(it) },
         )
     }
 
-    SideEffect { coordinator.update(tabs, entries, selectedTab, parentLocals) }
+    SideEffect { coordinator.update(tabs, entries, selectedTab, parentLocals, showsDialogs) }
     DisposableEffect(coordinator) { onDispose { coordinator.dispose() } }
 
     // In the root of NativeNavigationViewController the container is not embedded in Compose.
