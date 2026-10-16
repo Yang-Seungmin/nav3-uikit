@@ -13,9 +13,11 @@ public object NativeNavDiagnostics {
     private val hosted = mutableListOf<WeakReference<UIViewController>>()
 
     internal fun track(viewController: UIViewController) {
+        // Pruned here too, so the list stays as long as the live controllers in apps that never
+        // ask for the count.
+        hosted.removeAll { it.value == null }
         hosted += WeakReference(viewController)
     }
-
 
     /**
      * Returns how many hosted controllers are still alive. Objective-C objects owned by Kotlin

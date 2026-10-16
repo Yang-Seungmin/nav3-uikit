@@ -8,18 +8,12 @@ import XCTest
 /// "none", the tab bar must be at the bottom; otherwise the tab buttons and the back button must
 /// sit on that edge and the Compose content must stay clear of them. Run on the iPhone Duo
 /// simulator to cover the vertical bar; other simulators cover the bottom tab bar.
-final class VerticalBarUITests: XCTestCase {
-    private var app: XCUIApplication!
+final class VerticalBarUITests: SampleUITestCase {
+    override var sample: String? { "tabs" }
 
     override func setUp() {
-        continueAfterFailure = false
-        app = XCUIApplication()
-        app.launchEnvironment["NAV3_SAMPLE"] = "tabs"
-        if let host = ProcessInfo.processInfo.environment["NAV3_HOST"] {
-            app.launchEnvironment["NAV3_HOST"] = host
-        }
         XCUIDevice.shared.orientation = .portrait
-        app.launch()
+        super.setUp()
     }
 
     override func tearDown() {
@@ -37,13 +31,6 @@ final class VerticalBarUITests: XCTestCase {
         }
         XCTFail("nothing visible matches \(predicate) \(args)")
         return query.firstMatch
-    }
-
-    private func snapshot(_ name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
     }
 
     /// The vertical bar edge the visible screen reports: "leading", "trailing", or "none".

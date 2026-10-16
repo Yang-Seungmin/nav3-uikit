@@ -76,7 +76,10 @@ public class NativeTabRoot<out T : Any>(
 }
 
 /** What the tab bar shows for one tab. */
-internal data class TabLabel(val title: String, val icon: Painter?, val systemImage: String?)
+internal data class TabLabel(val title: String, val icon: Painter?, val systemImage: String?) {
+    /** What the tab's image is made from. */
+    val iconSource: Any? get() = systemImage ?: icon
+}
 
 /**
  * Displays several Navigation 3 back stacks behind a bottom tab bar.
@@ -87,11 +90,12 @@ internal data class TabLabel(val title: String, val icon: Painter?, val systemIm
  * native pushes, swipe-back, sheets, overlays from [sceneStrategies], and per-entry metadata from
  * [NativeNavigation].
  *
- * The caller owns the selection and the back stacks. When the user picks a tab in the tab bar,
- * [onTabSelected] is called with its index. When UIKit pops a tab's screens on its own
+ * The caller owns the selection and the back stacks, as `NavDisplay`'s caller owns its back stack.
+ * When the user picks another tab in the tab bar, [onTabSelected] is called with its index, and the
+ * display shows that tab once [selectedTab] changes. When UIKit pops a tab's screens on its own
  * (swipe-back, the back button, or tapping the selected tab again), [onBack] is called once per
- * removed entry with that tab's index. If the caller does not follow such a change, the display
- * returns UIKit to the selection and back stacks the caller holds.
+ * removed entry with that tab's index. If the caller does not follow a pop, the display puts the
+ * screens back.
  *
  * Every tab keeps its entries decorated while another tab is shown, so saveable state and
  * ViewModels survive tab switches. Entries of different tabs never share decorator state, even
@@ -117,7 +121,7 @@ public fun <T : Any> NativeTabDisplay(
     },
     entryDecorators: List<NavEntryDecorator<T>> =
         listOf(rememberSaveableStateHolderNavEntryDecorator()),
-    sceneStrategies: List<SceneStrategy<T>> = listOf(SinglePaneSceneStrategy()),
+    sceneStrategies: List<SceneStrategy<T>> = remember { listOf(SinglePaneSceneStrategy()) },
     sceneDecoratorStrategies: List<SceneDecoratorStrategy<T>> = emptyList(),
     sharedTransitionScope: SharedTransitionScope? = null,
     sizeTransform: SizeTransform? = null,
@@ -205,7 +209,7 @@ public fun <T : Any> NativeTabDisplay(
     },
     entryDecorators: List<NavEntryDecorator<T>> =
         listOf(rememberSaveableStateHolderNavEntryDecorator()),
-    sceneStrategies: List<SceneStrategy<T>> = listOf(SinglePaneSceneStrategy()),
+    sceneStrategies: List<SceneStrategy<T>> = remember { listOf(SinglePaneSceneStrategy()) },
     sceneDecoratorStrategies: List<SceneDecoratorStrategy<T>> = emptyList(),
     sharedTransitionScope: SharedTransitionScope? = null,
     sizeTransform: SizeTransform? = null,

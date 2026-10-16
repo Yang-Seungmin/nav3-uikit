@@ -43,9 +43,11 @@ import dev.seungmin.nav3.uikit.NativeNavDisplay
 import dev.seungmin.nav3.uikit.NativeNavigation
 import dev.seungmin.nav3.uikit.SheetDetent
 import kotlinx.coroutines.launch
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.modules.SerializersModule
 import kotlinx.serialization.modules.polymorphic
+import kotlinx.serialization.modules.subclassesOfSealed
 
 @Serializable sealed interface Route : NavKey
 
@@ -63,24 +65,12 @@ import kotlinx.serialization.modules.polymorphic
 
 @Serializable data object Profile : Route
 
+@OptIn(ExperimentalSerializationApi::class)
 internal val config = SavedStateConfiguration {
     serializersModule = SerializersModule {
         polymorphic(NavKey::class) {
-            subclass(Home::class, Home.serializer())
-            subclass(Detail::class, Detail.serializer())
-            subclass(Settings::class, Settings.serializer())
-            subclass(Filter::class, Filter.serializer())
-            subclass(Immersive::class, Immersive.serializer())
-            subclass(SearchHome::class, SearchHome.serializer())
-            subclass(Profile::class, Profile.serializer())
-            subclass(Lab::class, Lab.serializer())
-            subclass(Locked::class, Locked.serializer())
-            subclass(Editor::class, Editor.serializer())
-            subclass(Confirm::class, Confirm.serializer())
-            subclass(Plain::class, Plain.serializer())
-            subclass(Toolbar::class, Toolbar.serializer())
-            subclass(SignIn::class, SignIn.serializer())
-            subclass(Focus::class, Focus.serializer())
+            // Every Route, including ones added later.
+            subclassesOfSealed<Route>()
         }
     }
 }
@@ -132,7 +122,7 @@ fun App() {
 private fun StackApp() {
     CompositionLocalProvider(LocalAccent provides Color(0xFF2E6BE6)) {
         val backStack = rememberNavBackStack(config, Home)
-        val describe = { backStack.joinToString(" > ") { it.toString() } }
+        val describe = { backStack.joinToString(" > ") }
 
         // NAV3_LAYOUT=plain passes no modifier, as a call site copied from NavDisplay may.
         // NAV3_LAYOUT=bar puts the display above a Compose bar of the app's own.
@@ -162,10 +152,7 @@ private fun StackApp() {
                     labEntries(backStack, describe)
                     entry<Home>(metadata = NativeNavigation.title("Home", large = true)) {
                         Screen(describe()) {
-                            var plain by remember { mutableIntStateOf(0) }
-                            var saved by rememberSaveable { mutableIntStateOf(0) }
-                            Button("remember: $plain") { plain++ }
-                            Button("rememberSaveable: $saved") { saved++ }
+                            StateCounters()
                             Button("Open detail 1") { backStack += Detail(1) }
                             Button("Open settings sheet") { backStack += Settings }
                             Button("Open immersive") { backStack += Immersive }
@@ -175,11 +162,7 @@ private fun StackApp() {
                             }
                             Button("Push ten") { repeat(10) { backStack += Detail(it + 1) } }
                             Button("Open lab") { backStack += Lab }
-                            var live by remember { mutableStateOf<Int?>(null) }
-                            val scope = rememberCoroutineScope()
-                            Button("Live controllers: ${live ?: "?"}") {
-                                scope.launch { live = liveViewControllerCount() }
-                            }
+                            LiveControllersButton()
                             EventList()
                         }
                     }
@@ -287,5 +270,24 @@ internal fun EventList() {
         EventLog.events.takeLast(12).forEach {
             BasicText(it, style = TextStyle(fontSize = 12.sp, color = Color.Gray))
         }
+    }
+}
+
+/** Counters that show which state survives a screen leaving composition. */
+@Composable
+internal fun StateCounters() {
+    var plain by remember { mutableIntStateOf(0) }
+    var saved by rememberSaveable { mutableIntStateOf(0) }
+    Button("remember: $plain") { plain++ }
+    Button("rememberSaveable: $saved") { saved++ }
+}
+
+/** Reports how many hosted controllers are still alive; the UI tests use it to find leaks. */
+@Composable
+internal fun LiveControllersButton() {
+    var live by remember { mutableStateOf<Int?>(null) }
+    val scope = rememberCoroutineScope()
+    Button("Live controllers: ${live ?: "?"}") {
+        scope.launch { live = liveViewControllerCount() }
     }
 }

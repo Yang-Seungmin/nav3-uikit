@@ -30,9 +30,11 @@ internal class EntryNavigationItem(
 ) {
     private val controller = WeakReference(viewController)
     private val requests = mutableListOf<Request>()
+    private var shownButtons: List<UIBarButtonItem> = emptyList()
 
     var metadataTitle: String? = null
         set(value) {
+            if (field == value) return
             field = value
             apply()
         }
@@ -58,7 +60,11 @@ internal class EntryNavigationItem(
         val title = requests.lastOrNull { it.title != null }?.title ?: metadataTitle
         if (viewController.title != title) viewController.title = title
         // UIKit lays out right bar button items from the trailing edge.
-        viewController.navigationItem.rightBarButtonItems = requests.flatMap { it.buttons }.reversed()
+        val buttons = requests.flatMap { it.buttons }.reversed()
+        if (buttons != shownButtons) {
+            shownButtons = buttons
+            viewController.navigationItem.rightBarButtonItems = buttons
+        }
     }
 
     /** What one [NativeNavigationBarItems] call shows. */

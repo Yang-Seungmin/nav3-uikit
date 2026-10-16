@@ -2,63 +2,9 @@ import XCTest
 
 /// Drives the native UIKit gestures and checks that the Navigation 3 back stack follows them.
 /// Every screen prints the back stack as "backStack: ..." at the top.
-final class NativeNavigationUITests: XCTestCase {
-    private var app: XCUIApplication!
-
-    override func setUp() {
-        continueAfterFailure = false
-        app = XCUIApplication()
-        for name in ["NAV3_DECORATORS", "NAV3_HOST"] {
-            if let value = ProcessInfo.processInfo.environment[name] {
-                app.launchEnvironment[name] = value
-            }
-        }
-        app.launch()
-    }
-
-    private func element(_ label: String) -> XCUIElement {
-        app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
-    }
-
-    private func tap(_ label: String) {
-        let target = element(label)
-        XCTAssertTrue(target.waitForExistence(timeout: 5), "missing \(label)")
-        target.tap()
-    }
-
-    /// The back stack label of the screen on top. Hidden controllers keep theirs, so take the
-    /// one that is hittable.
-    private func expectBackStack(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
-        let label = "backStack: \(expected)"
-        let predicate = NSPredicate(format: "exists == true AND hittable == true")
-        let match = expectation(for: predicate, evaluatedWith: element(label))
-        if XCTWaiter().wait(for: [match], timeout: 5) != .completed {
-            snapshot("failure")
-            XCTFail("expected \(label)", file: file, line: line)
-        }
-    }
-
-    private func snapshot(_ name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
-    }
-
-    /// On iPhone Duo the back button moves from the navigation bar into the vertical bar.
-    private func tapBack() {
-        let back = app.buttons["BackButton"]
-        if back.waitForExistence(timeout: 2) && back.isHittable {
-            back.tap()
-        } else {
-            app.navigationBars.buttons.element(boundBy: 0).tap()
-        }
-    }
-
-    private func edgeSwipeBack() {
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
-        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
-        start.press(forDuration: 0.05, thenDragTo: end)
+final class NativeNavigationUITests: SampleUITestCase {
+    override var environment: [String: String] {
+        ProcessInfo.processInfo.environment["NAV3_DECORATORS"].map { ["NAV3_DECORATORS": $0] } ?? [:]
     }
 
     func testPushAndNativeBackButton() {
@@ -162,13 +108,7 @@ final class NativeNavigationUITests: XCTestCase {
         tap("Open filter sheet")
         tap("Close all sheets")
         expectBackStack("Home")
-        sleep(2)
-        tap("Live controllers: ?")
-        sleep(3)
-        let live = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH 'Live controllers: '")).firstMatch
-        XCTAssertTrue(live.waitForExistence(timeout: 5))
-        XCTAssertEqual(live.label, "Live controllers: 1", "leaked controllers")
+        assertLiveControllers(1)
         snapshot("live-controllers")
     }
 

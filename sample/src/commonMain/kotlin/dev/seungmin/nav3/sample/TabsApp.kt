@@ -8,9 +8,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -30,7 +27,6 @@ import dev.seungmin.nav3.uikit.NativeNavigation
 import dev.seungmin.nav3.uikit.NativeTab
 import dev.seungmin.nav3.uikit.NativeTabDisplay
 import dev.seungmin.nav3.uikit.SheetDetent
-import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
 /** Where the system put the vertical bar on iPhone Duo ("leading", "trailing"), or null. */
@@ -51,7 +47,7 @@ fun TabsApp(onSignOut: (() -> Unit)? = null) {
         var selected by rememberSaveable { mutableIntStateOf(0) }
         // Only the selected tab can be interacted with, so screens act on its back stack.
         val current: NavBackStack<NavKey> = backStacks[selected]
-        val describe = { stack: List<NavKey> -> stack.joinToString(" > ") { it.toString() } }
+        val describe = { stack: List<NavKey> -> stack.joinToString(" > ") }
         val names = listOf("Home", "Search", "Profile")
 
         NativeTabDisplay(
@@ -78,20 +74,14 @@ fun TabsApp(onSignOut: (() -> Unit)? = null) {
                 entry<Home>(metadata = NativeNavigation.title("Home", large = true)) {
                     TabScreen(names[selected], describe(current)) {
                         onSignOut?.let { Button("Sign out", it) }
-                        var plain by remember { mutableIntStateOf(0) }
-                        var saved by rememberSaveable { mutableIntStateOf(0) }
-                        Button("remember: $plain") { plain++ }
-                        Button("rememberSaveable: $saved") { saved++ }
+                        StateCounters()
                         Button("Open detail 1") { current += Detail(1) }
                         Button("Open settings sheet") { current += Settings }
                         Button("Go to Profile tab") { selected = 2 }
                         Button("Push detail 7 in Search tab") { search += Detail(7) }
+                        Button("Open sheet in Search tab") { search += Settings }
                         Button("Open focus") { current += Focus }
-                        var live by remember { mutableStateOf<Int?>(null) }
-                        val scope = rememberCoroutineScope()
-                        Button("Live controllers: ${live ?: "?"}") {
-                            scope.launch { live = liveViewControllerCount() }
-                        }
+                        LiveControllersButton()
                         EventList()
                     }
                 }

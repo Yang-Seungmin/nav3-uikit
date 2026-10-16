@@ -5,6 +5,7 @@ import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.SizeTransform
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.NavEntry
@@ -62,7 +63,7 @@ public fun <T : Any> NativeNavDisplay(
     },
     entryDecorators: List<NavEntryDecorator<T>> =
         listOf(rememberSaveableStateHolderNavEntryDecorator()),
-    sceneStrategies: List<SceneStrategy<T>> = listOf(SinglePaneSceneStrategy()),
+    sceneStrategies: List<SceneStrategy<T>> = remember { listOf(SinglePaneSceneStrategy()) },
     sceneDecoratorStrategies: List<SceneDecoratorStrategy<T>> = emptyList(),
     sharedTransitionScope: SharedTransitionScope? = null,
     sizeTransform: SizeTransform? = null,
@@ -103,7 +104,7 @@ public fun <T : Any> NativeNavDisplay(
     entries: List<NavEntry<T>>,
     modifier: Modifier = Modifier,
     contentAlignment: Alignment = Alignment.TopStart,
-    sceneStrategies: List<SceneStrategy<T>> = listOf(SinglePaneSceneStrategy()),
+    sceneStrategies: List<SceneStrategy<T>> = remember { listOf(SinglePaneSceneStrategy()) },
     sceneDecoratorStrategies: List<SceneDecoratorStrategy<T>> = emptyList(),
     sharedTransitionScope: SharedTransitionScope? = null,
     sizeTransform: SizeTransform? = null,

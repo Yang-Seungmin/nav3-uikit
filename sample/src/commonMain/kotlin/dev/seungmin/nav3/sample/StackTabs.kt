@@ -5,13 +5,10 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -26,7 +23,6 @@ import dev.seungmin.nav3.uikit.NativeNavigation
 import dev.seungmin.nav3.uikit.NativeTabDisplay
 import dev.seungmin.nav3.uikit.NativeTabRoot
 import dev.seungmin.nav3.uikit.SheetDetent
-import kotlinx.coroutines.launch
 
 /**
  * The top-level back stack of Navigation 3's `commonui` recipe, unchanged in behavior: one back
@@ -80,7 +76,7 @@ fun StackTabsApp() {
             NativeTabRoot(SearchHome, "Search", icon = "magnifyingglass"),
             NativeTabRoot(Profile, "Profile", icon = "person.crop.circle"),
         )
-        val describe = { backStack.joinToString(" > ") { it.toString() } }
+        val describe = { backStack.joinToString(" > ") }
 
         NativeTabDisplay(
             backStack = backStack,
@@ -95,19 +91,12 @@ fun StackTabsApp() {
             entryProvider = entryProvider {
                 entry<Home>(metadata = NativeNavigation.title("Home", large = true)) {
                     StackTabScreen(describe()) {
-                        var plain by remember { mutableIntStateOf(0) }
-                        var saved by rememberSaveable { mutableIntStateOf(0) }
-                        Button("remember: $plain") { plain++ }
-                        Button("rememberSaveable: $saved") { saved++ }
+                        StateCounters()
                         Button("Open detail 1") { topLevel.add(Detail(1)) }
                         Button("Open settings sheet") { topLevel.add(Settings) }
                         Button("Open focus") { topLevel.add(Focus) }
                         Button("Go to Profile tab") { topLevel.addTopLevel(Profile) }
-                        var live by remember { mutableStateOf<Int?>(null) }
-                        val scope = rememberCoroutineScope()
-                        Button("Live controllers: ${live ?: "?"}") {
-                            scope.launch { live = liveViewControllerCount() }
-                        }
+                        LiveControllersButton()
                     }
                 }
                 entry<SearchHome>(metadata = NativeNavigation.title("Search", large = true)) {

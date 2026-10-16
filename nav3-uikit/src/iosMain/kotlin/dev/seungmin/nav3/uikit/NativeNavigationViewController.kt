@@ -9,6 +9,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.uikit.ComposeUIViewControllerConfiguration
 import androidx.compose.ui.window.ComposeUIViewController
 import kotlin.experimental.ExperimentalNativeApi
@@ -21,13 +22,6 @@ import platform.UIKit.addChildViewController
 import platform.UIKit.didMoveToParentViewController
 import platform.UIKit.removeFromParentViewController
 import platform.UIKit.willMoveToParentViewController
-import platform.darwin.DISPATCH_TIME_NOW
-import platform.darwin.dispatch_after
-import platform.darwin.dispatch_get_main_queue
-import platform.darwin.dispatch_time
-
-private const val ATTACH_RETRY_NANOS = 16_000_000L
-
 /**
  * Root view controller for an app whose screens are shown by [NativeTabDisplay] or
  * [NativeNavDisplay]. Use it in place of `ComposeUIViewController`.
@@ -88,32 +82,23 @@ internal class NativeRootHost(
         return false
     }
 
-    fun attach(claim: RootClaim, controller: UIViewController) {
+    fun attach(claim: RootClaim) {
         if (owner !== claim) return
+        val controller = claim.controller
         val root = root.value ?: return
-        val parent = controller.parentViewController
-        if (parent == root) return
-        if (parent != null) {
-            // The container was embedded until now. Compose removes it from its interop parent
-            // in a transaction at its next render; moving it before that would let the removal
-            // take it out of the root again.
-            dispatch_after(dispatch_time(DISPATCH_TIME_NOW, ATTACH_RETRY_NANOS), dispatch_get_main_queue()) {
-                attach(claim, controller)
-            }
-            return
-        }
+        if (controller.parentViewController == root) return
+        // A container that was embedded until now leaves its wrapper; Compose removes the empty
+        // wrapper on its own.
+        controller.removeFromParent()
         root.addFullScreenChild(controller)
     }
 
-    fun release(claim: RootClaim, controller: UIViewController) {
+    fun release(claim: RootClaim) {
         waiting.remove(claim)
         if (owner !== claim) return
         owner = null
-        if (controller.parentViewController == root.value) {
-            controller.willMoveToParentViewController(null)
-            controller.view.removeFromSuperview()
-            controller.removeFromParentViewController()
-        }
+        val controller = claim.controller
+        if (controller.parentViewController == root.value) controller.removeFromParent()
         val next = waiting.removeFirstOrNull() ?: return
         owner = next
         next.placement = RootPlacement.Root
@@ -132,33 +117,49 @@ internal enum class RootPlacement {
 }
 
 /**
- * Where [controller] goes: the root of [NativeNavigationViewController] when one is available,
- * otherwise Compose. A display that finds the root taken embeds its container and moves it to the
- * root once the current owner leaves composition.
+ * Shows [controller] in the root of [NativeNavigationViewController] when one is available,
+ * otherwise in Compose. A display that finds the root taken embeds its container and moves it to
+ * the root once the current owner leaves composition.
+ *
+ * An embedded container sits in a wrapper that this library owns, and Compose only ever holds the
+ * wrapper. Moving the container to the root is then one synchronous step that does not wait for
+ * Compose to remove the wrapper.
  */
 @Composable
-internal fun rememberRootPlacement(controller: UIViewController): RootPlacement {
-    val host = LocalNativeRootHost.current ?: return RootPlacement.Embedded
+internal fun RootOrEmbeddedContainer(controller: UIViewController, modifier: Modifier) {
+    val host = LocalNativeRootHost.current
+    if (host == null) {
+        EmbeddedContainer(controller, modifier)
+        return
+    }
     val claim = remember(host, controller) { RootClaim(host, controller) }
-    if (claim.placement == RootPlacement.Root) {
-        DisposableEffect(claim) {
-            host.attach(claim, controller)
+    when (claim.placement) {
+        RootPlacement.Pending -> Unit
+        RootPlacement.Root -> DisposableEffect(claim) {
+            host.attach(claim)
             onDispose {}
         }
+        RootPlacement.Embedded -> EmbeddedContainer(claim.wrapper, modifier)
     }
-    return claim.placement
 }
 
 internal class RootClaim(
     private val host: NativeRootHost,
-    private val controller: UIViewController,
+    val controller: UIViewController,
 ) : RememberObserver {
     var placement by mutableStateOf(RootPlacement.Pending)
 
+    /** Holds [controller] while it is embedded. */
+    val wrapper: UIViewController by lazy {
+        controller.removeFromParent()
+        EmbeddedContainerController().also { it.addFullScreenChild(controller) }
+    }
+
     init {
         // The root is usually free on first composition. When it is not, the owner may be a
-        // display leaving in this same pass; Compose sends onForgotten before onRemembered, so
-        // onRemembered can tell whether this claim got the root.
+        // display leaving in this same pass. Compose sends onForgotten before onRemembered, so
+        // this claim usually gets the root before it would embed; if not, it embeds for a frame
+        // and then moves.
         if (host.request(this)) placement = RootPlacement.Root
     }
 
@@ -166,9 +167,19 @@ internal class RootClaim(
         if (placement == RootPlacement.Pending) placement = RootPlacement.Embedded
     }
 
-    override fun onForgotten() = host.release(this, controller)
+    override fun onForgotten() = host.release(this)
 
-    override fun onAbandoned() = host.release(this, controller)
+    override fun onAbandoned() = host.release(this)
+}
+
+/** A plain container, distinct from the root controller, which is a `UIViewController` itself. */
+private class EmbeddedContainerController : UIViewController(nibName = null, bundle = null)
+
+private fun UIViewController.removeFromParent() {
+    if (parentViewController == null) return
+    willMoveToParentViewController(null)
+    view.removeFromSuperview()
+    removeFromParentViewController()
 }
 
 @OptIn(ExperimentalForeignApi::class)

@@ -78,6 +78,41 @@ class SampleUITestCase: XCTestCase {
     func settle() {
         usleep(1_500_000)
     }
+
+    func tabButton(_ name: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label == %@", name)).firstMatch
+    }
+
+    /// Whether the tab bar marks `name` as selected. Waits, because the selection indicator
+    /// animates, and checks every match, because the tab bar can expose a tab more than once.
+    func isTabSelected(_ name: String) -> Bool {
+        let matches = app.buttons.matching(NSPredicate(format: "label == %@", name))
+        let deadline = Date().addingTimeInterval(3)
+        repeat {
+            if matches.allElementsBoundByIndex.contains(where: { $0.isSelected }) { return true }
+            usleep(200_000)
+        } while Date() < deadline
+        print("tab \(name) not selected:\n" + matches.debugDescription)
+        return false
+    }
+
+    func selectTab(_ name: String) {
+        let button = tabButton(name)
+        XCTAssertTrue(button.waitForExistence(timeout: 5), "missing tab \(name)")
+        button.tap()
+    }
+
+    /// Asks the sample how many hosted controllers are alive, after the last transition and the
+    /// releases that follow it have finished.
+    func assertLiveControllers(_ expected: Int, file: StaticString = #filePath, line: UInt = #line) {
+        sleep(2)
+        tap("Live controllers: ?")
+        sleep(3)
+        let live = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label BEGINSWITH 'Live controllers: '")).firstMatch
+        XCTAssertTrue(live.waitForExistence(timeout: 5), file: file, line: line)
+        XCTAssertEqual(live.label, "Live controllers: \(expected)", "leaked controllers", file: file, line: line)
+    }
 }
 
 /// Checks the single-stack sample against what a standard Navigation 3 app expects: the app may
@@ -198,13 +233,7 @@ final class StandardAppUITests: SampleUITestCase {
         }
         tapBack()
         expectBackStack("Home")
-        sleep(2)
-        tap("Live controllers: ?")
-        sleep(3)
-        let live = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH 'Live controllers: '")).firstMatch
-        XCTAssertTrue(live.waitForExistence(timeout: 5))
-        XCTAssertEqual(live.label, "Live controllers: 1", "leaked controllers")
+        assertLiveControllers(1)
     }
 }
 

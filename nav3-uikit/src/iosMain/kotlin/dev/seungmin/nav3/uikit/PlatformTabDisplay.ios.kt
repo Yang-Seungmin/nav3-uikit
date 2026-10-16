@@ -30,6 +30,7 @@ internal actual fun <T : Any> PlatformTabDisplay(
     val nativeChanges = remember { mutableIntStateOf(0) }
     val coordinator = remember {
         UIKitTabCoordinator<T>(
+            parentLocals = parentLocals,
             configure = configure,
             onTabSelected = { currentOnTabSelected(it) },
             onBack = { currentOnBack(it) },
@@ -47,9 +48,7 @@ internal actual fun <T : Any> PlatformTabDisplay(
 
     // On an open iPhone Duo the tab bar only appears in the vertical bar when the tab bar
     // controller is not inside Compose, so it goes to NativeNavigationViewController's root.
-    if (rememberRootPlacement(coordinator.tabBarController) == RootPlacement.Embedded) {
-        EmbeddedContainer(coordinator.tabBarController, modifier)
-    }
+    RootOrEmbeddedContainer(coordinator.tabBarController, modifier)
 }
 
 @Composable

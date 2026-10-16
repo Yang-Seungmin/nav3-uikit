@@ -3,85 +3,13 @@ import XCTest
 /// Drives the single back stack tab sample (`NAV3_SAMPLE=stack-tabs`): the `commonui` recipe's
 /// `TopLevelBackStack`, whose one back stack holds every visited tab. Every screen prints
 /// "backStack: <whole stack>" and "native=<screens per tab>" at the top.
-final class StackTabsUITests: XCTestCase {
-    private var app: XCUIApplication!
-
-    override func setUp() {
-        continueAfterFailure = false
-        app = XCUIApplication()
-        app.launchEnvironment["NAV3_SAMPLE"] = "stack-tabs"
-        if let host = ProcessInfo.processInfo.environment["NAV3_HOST"] {
-            app.launchEnvironment["NAV3_HOST"] = host
-        }
-        app.launch()
-    }
-
-    private func element(_ label: String) -> XCUIElement {
-        app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
-    }
-
-    private func tap(_ label: String) {
-        let target = element(label)
-        XCTAssertTrue(target.waitForExistence(timeout: 5), "missing \(label)")
-        target.tap()
-    }
-
-    private func tabButton(_ name: String) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label == %@", name)).firstMatch
-    }
-
-    private func isTabSelected(_ name: String) -> Bool {
-        let matches = app.buttons.matching(NSPredicate(format: "label == %@", name))
-        let deadline = Date().addingTimeInterval(3)
-        repeat {
-            if matches.allElementsBoundByIndex.contains(where: { $0.isSelected }) { return true }
-            usleep(200_000)
-        } while Date() < deadline
-        print("tab \(name) not selected:\n" + matches.debugDescription)
-        return false
-    }
-
-    private func selectTab(_ name: String) {
-        let button = tabButton(name)
-        XCTAssertTrue(button.waitForExistence(timeout: 5), "missing tab \(name)")
-        button.tap()
-    }
-
-    private func tapBack() {
-        let back = app.buttons["BackButton"]
-        if back.waitForExistence(timeout: 2) && back.isHittable {
-            back.tap()
-        } else {
-            app.navigationBars.buttons.element(boundBy: 0).tap()
-        }
-    }
-
-    private func edgeSwipeBack() {
-        let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5))
-        let end = app.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5))
-        start.press(forDuration: 0.05, thenDragTo: end)
-    }
-
-    private func expectVisible(_ label: String, file: StaticString = #filePath, line: UInt = #line) {
-        let predicate = NSPredicate(format: "exists == true AND hittable == true")
-        let match = expectation(for: predicate, evaluatedWith: element(label))
-        if XCTWaiter().wait(for: [match], timeout: 5) != .completed {
-            snapshot("failure")
-            XCTFail("expected visible \(label)", file: file, line: line)
-        }
-    }
+final class StackTabsUITests: SampleUITestCase {
+    override var sample: String? { "stack-tabs" }
 
     /// The whole back stack and how many screens each tab's UINavigationController holds.
     private func expectState(_ backStack: String, native: String, file: StaticString = #filePath, line: UInt = #line) {
         expectVisible("backStack: \(backStack)", file: file, line: line)
         expectVisible("native=\(native)", file: file, line: line)
-    }
-
-    private func snapshot(_ name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
     }
 
     /// Each tab shows its own part of the one back stack, and selecting a tab moves its part to
@@ -139,7 +67,7 @@ final class StackTabsUITests: XCTestCase {
     func testTabBarHiddenWhenPushed() {
         tap("Open focus")
         expectVisible("Tab bar hidden here")
-        usleep(1_500_000)
+        settle()
         let search = tabButton("Search")
         XCTAssertFalse(search.exists && search.isHittable, "tab bar still shown")
         tapBack()
@@ -163,12 +91,6 @@ final class StackTabsUITests: XCTestCase {
         tap("Open settings sheet")
         tap("Close sheet")
         expectState("SearchHome > Home", native: "1,1,0")
-        sleep(2)
-        tap("Live controllers: ?")
-        sleep(3)
-        let live = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH 'Live controllers: '")).firstMatch
-        XCTAssertTrue(live.waitForExistence(timeout: 5))
-        XCTAssertEqual(live.label, "Live controllers: 2", "leaked controllers")
+        assertLiveControllers(2)
     }
 }

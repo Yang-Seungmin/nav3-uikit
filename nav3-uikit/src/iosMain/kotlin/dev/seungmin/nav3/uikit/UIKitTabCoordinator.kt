@@ -18,12 +18,14 @@ import platform.darwin.NSObject
  * [UIKitNavigationCoordinator], so pushes, pops, sheets, and overlays inside a tab work exactly as
  * in [NativeNavDisplay].
  *
- * Selection follows the same two directions as the back stack: [update] selects the tab the
- * caller asks for, and a tap in the tab bar reports the new index through [onTabSelected]. After
- * either kind of native change, [onNativeChange] makes the display call [update] again, which
- * undoes a change the caller did not follow.
+ * The caller owns the selection, as `NavDisplay`'s caller owns the back stack: a tap on another
+ * tab only reports its index through [onTabSelected], and [update] selects the tab the caller then
+ * asks for. Native pops inside a tab are applied by UIKit first and reported through [onBack];
+ * [onNativeChange] makes the display call [update] again, which undoes a pop the caller did not
+ * follow.
  */
 internal class UIKitTabCoordinator<T : Any>(
+    parentLocals: CompositionLocalContext,
     private val configure: ComposeUIViewControllerConfiguration.() -> Unit,
     private val onTabSelected: (index: Int) -> Unit,
     private val onBack: (tab: Int) -> Unit,
@@ -31,6 +33,8 @@ internal class UIKitTabCoordinator<T : Any>(
 ) {
     val tabBarController = UITabBarController()
 
+    /** Shared by every tab's navigator. */
+    private val parentLocals = ParentLocals(parentLocals)
     private val navigators = mutableListOf<UIKitNavigationCoordinator<T>>()
     private val uiTabs = mutableListOf<UITab>()
 
@@ -53,22 +57,20 @@ internal class UIKitTabCoordinator<T : Any>(
         parentLocals: CompositionLocalContext,
     ) {
         if (disposed) return
-        if (tabs.size != navigators.size) rebuild(tabs, parentLocals)
+        this.parentLocals.value = parentLocals
+        if (tabs.size != navigators.size) resize(tabs)
 
         tabs.forEachIndexed { index, tab ->
             val uiTab = uiTabs[index]
             if (uiTab.title != tab.title) uiTab.title = tab.title
-            val iconSource = tab.systemImage ?: tab.icon
-            if (iconSources[index] != iconSource) {
-                iconSources[index] = iconSource
+            if (iconSources[index] != tab.iconSource) {
+                iconSources[index] = tab.iconSource
                 uiTab.image = tabImage(tab)
             }
 
-            val navigator = navigators[index]
-            navigator.parentLocals.value = parentLocals
             // Only the tab that stays on screen animates. UIKit leaves a tab's transition half
             // done when the tab is switched away during it, with the old screens still stacked.
-            navigator.setEntries(entries[index], overlays[index], animate = index == selectedTab)
+            navigators[index].setEntries(entries[index], overlays[index], animate = index == selectedTab)
         }
 
         val wanted = uiTabs[selectedTab]
@@ -83,34 +85,29 @@ internal class UIKitTabCoordinator<T : Any>(
     }
 
     /**
-     * Whether UIKit may switch to [tab] itself. A tab with no entries would show an empty screen
-     * until the app's next frame, so its selection is reported instead and [update] selects the
-     * tab once the app gives it entries.
+     * Whether UIKit may select [tab] itself. Only the selected tab may be selected again, which
+     * makes UIKit pop that tab to its root. Another tab is reported to the caller and selected by
+     * [update] if the caller follows.
      */
     fun shouldSelect(tab: UITab): Boolean {
+        if (tab.identifier == tabBarController.selectedTab?.identifier) return true
         val index = uiTabs.indexOfFirst { it.identifier == tab.identifier }
-        if (index == -1 || !navigators[index].isEmpty) return true
-        onTabSelected(index)
-        onNativeChange()
+        if (index != -1) onTabSelected(index)
         return false
     }
 
-    fun onUserSelected(tab: UITab) {
-        val index = uiTabs.indexOfFirst { it.identifier == tab.identifier }
-        if (index == -1) return
-        onTabSelected(index)
-        onNativeChange()
-    }
-
-    private fun rebuild(tabs: List<TabLabel>, parentLocals: CompositionLocalContext) {
-        navigators.forEach { it.dispose() }
-        navigators.clear()
-        uiTabs.clear()
-        iconSources.clear()
+    /** Adds or removes tabs at the end; the tabs that stay keep their screens. */
+    private fun resize(tabs: List<TabLabel>) {
+        while (navigators.size > tabs.size) {
+            navigators.removeLast().dispose()
+            uiTabs.removeLast()
+            iconSources.removeLast()
+        }
         // The navigators must not capture this coordinator.
         val onBack = onBack
         val onNativeChange = onNativeChange
-        tabs.forEachIndexed { index, tab ->
+        for (index in navigators.size until tabs.size) {
+            val tab = tabs[index]
             val navigator = UIKitNavigationCoordinator<T>(
                 parentLocals = parentLocals,
                 configure = configure,
@@ -119,7 +116,7 @@ internal class UIKitTabCoordinator<T : Any>(
             )
             navigators += navigator
             uiTabs += tabFor(index, tab, navigator.navigationController)
-            iconSources += tab.systemImage ?: tab.icon
+            iconSources += tab.iconSource
         }
         tabBarController.setTabs(uiTabs.toList(), animated = false)
     }
@@ -138,13 +135,4 @@ private class TabBarDelegate(
     @ObjCSignatureOverride
     override fun tabBarController(tabBarController: UITabBarController, shouldSelectTab: UITab): Boolean =
         coordinator.value?.shouldSelect(shouldSelectTab) ?: true
-
-    @ObjCSignatureOverride
-    override fun tabBarController(
-        tabBarController: UITabBarController,
-        didSelectTab: UITab,
-        previousTab: UITab?,
-    ) {
-        coordinator.value?.onUserSelected(didSelectTab)
-    }
 }

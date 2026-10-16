@@ -108,10 +108,11 @@ internal class EntryHost<T : Any>(
     }
 
     fun update(newEntry: NavEntry<T>, overlay: (@Composable () -> Unit)?) {
+        val metadataChanged = newEntry.metadata != content.entry.metadata
         content.entry = newEntry
         // An overlay whose scene is gone keeps its presentation and shows the entry directly.
         if (isOverlay) content.overlay = overlay
-        applyMetadata()
+        if (metadataChanged) applyMetadata()
     }
 
     fun configureAsModal(coordinator: UIKitNavigationCoordinator<T>) {
@@ -156,9 +157,6 @@ internal class EntryHost<T : Any>(
         viewController.hidesBottomBarWhenPushed = metadata[NativeNavigation.TabBarHidden] == true
     }
 }
-
-internal fun NavEntry<*>.isSheet(): Boolean =
-    metadata[NativeNavigation.Presentation] is NativePresentation.Sheet
 
 private class EntryContent<T : Any>(
     entry: NavEntry<T>,

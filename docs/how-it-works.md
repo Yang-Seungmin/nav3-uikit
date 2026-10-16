@@ -11,7 +11,7 @@ This page explains what the displays do with UIKit. For setup and usage, see the
 
 ## Back gestures and back handlers
 
-- When UIKit removes a controller itself (edge swipe-back, the back button, dragging a sheet down), `onBack` is called once per removed entry. Cancelling a swipe partway changes nothing. If the app leaves its back stack unchanged, for example because the screen is busy, the display puts the removed screens back. A tab the user picks but the app does not select is undone the same way.
+- When UIKit removes a controller itself (edge swipe-back, the back button, dragging a sheet down), `onBack` is called once per removed entry. Cancelling a swipe partway changes nothing. If the app leaves its back stack unchanged, for example because the screen is busy, the display puts the removed screens back. A tab the user picks is not shown until the app selects it, as `NavDisplay` only shows the back stack it is given.
 - When the top entry's content has an enabled back handler (`NavigationBackHandler`, `BackHandler`, an open `ModalBottomSheet`, and so on), UIKit does not pop it. The back button, the edge swipe, the back button's history menu, and dragging a sheet down all go to that handler, as system back does under `NavDisplay`.
 
 ## Navigation bar
@@ -28,7 +28,7 @@ The native navigation bar is shown only for entries that ask for it, with `Nativ
 
 - Each tab is the same navigation coordinator `NativeNavDisplay` uses, so pushes, swipe-back, sheets, and metadata work inside every tab.
 - With the single back stack overload, each tab shows its part of the back stack, from its root key up to the next tab's root key. The tab whose root key comes last is selected. A tab that occurs twice shows its last part, and a tab that is not in the back stack is empty. Tapping such a tab calls `onTabSelected` without switching, and UIKit selects the tab once the back stack holds it, so the empty tab is never shown. Its entries are decorated once in back stack order, as `NavDisplay` decorates them, so an entry that leaves the back stack loses its state there too.
-- With the `NativeTab` overload, the caller owns the selection. Tapping a tab calls `onTabSelected`; changing `selectedTab` selects the tab in UIKit. Tapping the selected tab again makes UIKit pop that tab to its root, which reaches the back stack through `onBack(tab)` like any other native pop.
+- With the `NativeTab` overload, the caller owns the selection. Tapping another tab calls `onTabSelected` without switching; changing `selectedTab` selects the tab in UIKit. Tapping the selected tab again makes UIKit pop that tab to its root, which reaches the back stack through `onBack(tab)` like any other native pop.
 - With the `NativeTab` overload, every tab's entries stay decorated while the tab is hidden, so `remember`, `rememberSaveable`, and ViewModels survive tab switches. The library prefixes each entry's `contentKey` with its tab, so the same key on two tabs gets separate saveable state and a separate ViewModel.
 - A back stack can change while its tab is hidden, for example to open a screen in another tab. The tab shows the new stack when it is selected. Every tab can also get a new root while another tab is selected in the same frame, as when an app rebuilds its main tabs after a flow finishes.
 - `NativeNavigation.tabBarHidden()` metadata hides the tab bar while that entry is pushed above its tab's root, as detail screens in many apps do.

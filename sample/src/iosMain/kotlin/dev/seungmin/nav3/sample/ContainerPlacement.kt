@@ -14,19 +14,22 @@ import platform.UIKit.UITabBarController
 import platform.UIKit.UIViewController
 import platform.UIKit.childViewControllers
 
+/** Reads [read] from this screen's controller now and then; the containers move after composition. */
 @Composable
-actual fun containerPlacement(): String? {
+private fun <R> pollController(read: (UIViewController) -> R): R? {
     val controller = LocalUIViewController.current
-    var placement by remember { mutableStateOf<String?>(null) }
+    var value by remember { mutableStateOf<R?>(null) }
     LaunchedEffect(controller) {
-        // The containers move after composition, so keep reading.
         while (true) {
-            placement = describePlacement(controller)
+            value = read(controller)
             delay(300)
         }
     }
-    return placement
+    return value
 }
+
+@Composable
+actual fun containerPlacement(): String? = pollController(::describePlacement)
 
 private fun describePlacement(screen: UIViewController): String {
     var container = screen
@@ -42,17 +45,7 @@ private fun describePlacement(screen: UIViewController): String {
 }
 
 @Composable
-actual fun nativeStackSizes(): String? {
-    val controller = LocalUIViewController.current
-    var sizes by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(controller) {
-        while (true) {
-            sizes = describeStackSizes(controller)
-            delay(300)
-        }
-    }
-    return sizes
-}
+actual fun nativeStackSizes(): String? = pollController(::describeStackSizes)
 
 private fun describeStackSizes(screen: UIViewController): String? {
     var container: UIViewController? = screen
@@ -65,16 +58,8 @@ private fun describeStackSizes(screen: UIViewController): String? {
 }
 
 @Composable
-actual fun rootChildCount(): Int? {
-    val controller = LocalUIViewController.current
-    var count by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(controller) {
-        while (true) {
-            var root = controller
-            while (true) root = root.parentViewController ?: break
-            count = root.childViewControllers.size
-            delay(300)
-        }
-    }
-    return count
+actual fun rootChildCount(): Int? = pollController { controller ->
+    var root = controller
+    while (true) root = root.parentViewController ?: break
+    root.childViewControllers.size
 }

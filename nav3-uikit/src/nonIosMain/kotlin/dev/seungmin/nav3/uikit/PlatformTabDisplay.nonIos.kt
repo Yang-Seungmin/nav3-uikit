@@ -5,7 +5,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.navigation3.runtime.NavEntry
-import androidx.navigation3.ui.NavDisplay
 import androidx.navigationevent.NavigationEventInfo
 import androidx.navigationevent.compose.NavigationBackHandler
 import androidx.navigationevent.compose.rememberNavigationEventState
@@ -23,18 +22,7 @@ internal actual fun <T : Any> PlatformTabDisplay(
 ) {
     Column(modifier) {
         Box(Modifier.weight(1f)) {
-            NavDisplay(
-                entries = entries[selectedTab],
-                contentAlignment = options.contentAlignment,
-                sceneStrategies = options.sceneStrategies,
-                sceneDecoratorStrategies = options.sceneDecoratorStrategies,
-                sharedTransitionScope = options.sharedTransitionScope,
-                sizeTransform = options.sizeTransform,
-                transitionSpec = options.transitionSpec,
-                popTransitionSpec = options.popTransitionSpec,
-                predictivePopTransitionSpec = options.predictivePopTransitionSpec,
-                onBack = { onBack(selectedTab) },
-            )
+            PlatformNavDisplay(entries[selectedTab], Modifier, onBack = { onBack(selectedTab) }, options)
         }
         tabBar()
     }
@@ -62,18 +50,7 @@ internal actual fun <T : Any> PlatformStackTabDisplay(
     // exactly as it did before the app switched to this display.
     Column(modifier) {
         Box(Modifier.weight(1f)) {
-            NavDisplay(
-                entries = entries,
-                contentAlignment = options.contentAlignment,
-                sceneStrategies = options.sceneStrategies,
-                sceneDecoratorStrategies = options.sceneDecoratorStrategies,
-                sharedTransitionScope = options.sharedTransitionScope,
-                sizeTransform = options.sizeTransform,
-                transitionSpec = options.transitionSpec,
-                popTransitionSpec = options.popTransitionSpec,
-                predictivePopTransitionSpec = options.predictivePopTransitionSpec,
-                onBack = onBack,
-            )
+            PlatformNavDisplay(entries, Modifier, onBack, options)
         }
         tabBar()
     }

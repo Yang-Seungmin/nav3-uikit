@@ -31,9 +31,10 @@ internal actual fun <T : Any> PlatformNavDisplay(
     val currentOnBack by rememberUpdatedState(onBack)
     val configure = LocalNativeRootHost.current?.configure ?: {}
     val nativeChanges = remember { mutableIntStateOf(0) }
+    val sharedLocals = remember { ParentLocals(parentLocals) }
     val coordinator = remember {
         UIKitNavigationCoordinator<T>(
-            parentLocals = parentLocals,
+            parentLocals = sharedLocals,
             configure = configure,
             onBack = { currentOnBack() },
             onNativeChange = { nativeChanges.intValue++ },
@@ -45,7 +46,7 @@ internal actual fun <T : Any> PlatformNavDisplay(
     // effect below runs even when the app kept its back stack, and UIKit follows the entries again.
     nativeChanges.intValue
     SideEffect {
-        coordinator.parentLocals.value = parentLocals
+        sharedLocals.value = parentLocals
         coordinator.setEntries(entries, overlays)
     }
     DisposableEffect(coordinator) { onDispose { coordinator.dispose() } }
@@ -89,7 +90,8 @@ internal fun <T : Any> rememberOverlays(
         sceneDecoratorStrategies = options.sceneDecoratorStrategies,
         onBack = onBack,
     )
-    return remember(sceneState) {
+    // Keyed on the overlays alone: comparing the whole scene state also compares every previous scene.
+    return remember(sceneState.overlayScenes) {
         buildMap {
             sceneState.overlayScenes.forEach { scene ->
                 scene.entries.singleOrNull()?.let { put(it.contentKey, scene.content) }

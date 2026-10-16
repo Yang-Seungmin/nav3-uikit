@@ -36,7 +36,7 @@ fun RestartApp() {
     var selected by rememberSaveable { mutableIntStateOf(0) }
     val names = listOf("First", "Second")
     val stacks = remember(session) { names.indices.map { mutableStateListOf<NavKey>(TabRoot(session, it)) } }
-    val describe = { tab: Int -> "${names[tab]}: " + stacks[tab].joinToString(" > ") { it.toString() } }
+    val describe = { tab: Int -> "${names[tab]}: " + stacks[tab].joinToString(" > ") }
     val finish = { tab: Int ->
         session++
         selected = tab
