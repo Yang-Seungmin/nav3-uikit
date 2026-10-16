@@ -6,6 +6,7 @@
 ![Kotlin 2.4.20](https://img.shields.io/badge/Kotlin-2.4.20-7F52FF?logo=kotlin&logoColor=white)
 ![Compose Multiplatform 1.12.1](https://img.shields.io/badge/Compose_Multiplatform-1.12.1-4285F4)
 ![Platforms](https://img.shields.io/badge/platforms-iOS_|_Android_|_JVM-lightgrey)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 Rename `NavDisplay` to `NativeNavDisplay` and your iOS screens run in a real `UINavigationController`, with system swipe-back, large titles, and sheets. `NativeTabDisplay` adds a native `UITabBarController`. On Android and desktop, both fall back to `NavDisplay`.
 
@@ -182,3 +183,21 @@ The tested versions are the ones in `gradle/libs.versions.toml` (last checked 20
 - [How it works on iOS](docs/how-it-works.md): how entries map to controllers, how native pops reach the back stack, tabs, and the iPhone Duo layout.
 - [CONTRIBUTING.md](CONTRIBUTING.md): repository layout, the sample app, building, and the UI test suite.
 - `sample/`: runnable single-stack and tab samples for iOS and desktop.
+
+## License
+
+```
+Copyright 2026 Seungmin Yang
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+   https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+```
