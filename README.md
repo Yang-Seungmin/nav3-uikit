@@ -9,6 +9,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-experimental-orange" alt="Status: experimental">
+  <a href="https://central.sonatype.com/artifact/dev.seungmin.nav3/nav3-uikit"><img src="https://img.shields.io/maven-central/v/dev.seungmin.nav3/nav3-uikit" alt="Maven Central"></a>
   <img src="https://img.shields.io/badge/Kotlin-2.4.20-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin 2.4.20">
   <img src="https://img.shields.io/badge/Compose_Multiplatform-1.12.1-4285F4" alt="Compose Multiplatform 1.12.1">
   <img src="https://img.shields.io/badge/platforms-iOS_|_Android_|_JVM-lightgrey" alt="Platforms: iOS, Android, JVM">
@@ -43,20 +44,14 @@ Rename `NavDisplay` to `NativeNavDisplay` and your iOS screens run in a real `UI
 
 ## Install
 
-The library is not on a public Maven repository. Publish it to your local Maven repository from a clone of this repository:
-
-```sh
-./gradlew :nav3-uikit:publishToMavenLocal
-```
-
-Then add `mavenLocal()` to your repositories and depend on it from `commonMain`:
+The library is on Maven Central. Depend on it from `commonMain`:
 
 ```kotlin
 // build.gradle.kts
 kotlin {
     sourceSets {
         commonMain.dependencies {
-            implementation("dev.seungmin.nav3:nav3-uikit:0.1.0-exp4")
+            implementation("dev.seungmin.nav3:nav3-uikit:0.1.0-dev01")
         }
     }
 }

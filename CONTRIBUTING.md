@@ -27,7 +27,7 @@ Building needs JDK 21, the Android SDK, Xcode, and XcodeGen. The Kotlin, Compose
 ./gradlew :nav3-uikit:publishToMavenLocal
 ```
 
-`publishToMavenLocal` publishes `dev.seungmin.nav3:nav3-uikit` with Android, JVM, and iOS variants under one coordinate, so Gradle picks the variant for each consumer. The version is the default in `nav3-uikit/build.gradle.kts` unless the `nav3.version` Gradle property sets another. Experimental builds carry an `-expN` suffix, such as `0.1.0-exp4`, raised by one for each build.
+`publishToMavenLocal` publishes `dev.seungmin.nav3:nav3-uikit` with Android, JVM, and iOS variants under one coordinate, so Gradle picks the variant for each consumer. The version is the `-SNAPSHOT` default in `nav3-uikit/build.gradle.kts` unless the `nav3.version` Gradle property sets another. Without a signing key the local publication is unsigned.
 
 ## UI tests
 
@@ -68,3 +68,7 @@ Do not reach the inner display by toggling display power with `xcrun simctl io <
 ## Memory rule for iOS code
 
 Kotlin/Native's garbage collector cannot collect reference cycles that pass through Objective-C objects. Nothing reachable from a hosted controller's content lambda, a `UITab`'s view controller provider, or a UIKit delegate may hold a strong reference to `EntryHost` or a coordinator. Breaking this rule leaks popped screens. `testPoppedControllersAreReleased` in the UI test classes checks it.
+
+## Pull requests
+
+Fork the repository, make the change on a branch, and open a pull request against `main`. CI compiles the library for every target and runs `jvmTest`. It does not run the UI tests, so for a change to the iOS code, run them as described in [UI tests](#ui-tests) on a regular iPhone simulator and mention the result in the pull request.

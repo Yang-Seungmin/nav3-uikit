@@ -3,13 +3,48 @@ plugins {
     alias(libs.plugins.compose.multiplatform)
     alias(libs.plugins.compose.compiler)
     alias(libs.plugins.android.kmp.library)
-    `maven-publish`
+    alias(libs.plugins.maven.publish)
 }
 
 group = "dev.seungmin.nav3"
-// Versions keep the -expN suffix, raised by one for each experimental build, until the library
-// is published to a public Maven repository.
-version = providers.gradleProperty("nav3.version").getOrElse("0.1.0-exp4")
+// The release workflow sets nav3.version from the pushed tag, so this default applies only to local builds.
+version = providers.gradleProperty("nav3.version").getOrElse("0.1.0-SNAPSHOT")
+
+mavenPublishing {
+    // The deployment waits in the Central Portal until someone presses Publish there.
+    publishToMavenCentral(automaticRelease = false)
+    // Without a key, publishToMavenLocal works unsigned; the Central Portal rejects unsigned uploads.
+    if (providers.gradleProperty("signingInMemoryKey").isPresent) {
+        signAllPublications()
+    }
+
+    pom {
+        name = "nav3-uikit"
+        description = "Native UIKit navigation for Compose Multiplatform apps built on Navigation 3"
+        inceptionYear = "2026"
+        url = "https://github.com/ysmsm/nav3-uikit"
+        licenses {
+            license {
+                name = "The Apache License, Version 2.0"
+                url = "https://www.apache.org/licenses/LICENSE-2.0.txt"
+                distribution = "repo"
+            }
+        }
+        developers {
+            developer {
+                id = "ysmsm"
+                name = "Seungmin Yang"
+                email = "me@seungmin.dev"
+                url = "https://github.com/ysmsm"
+            }
+        }
+        scm {
+            url = "https://github.com/ysmsm/nav3-uikit"
+            connection = "scm:git:https://github.com/ysmsm/nav3-uikit.git"
+            developerConnection = "scm:git:ssh://git@github.com/ysmsm/nav3-uikit.git"
+        }
+    }
+}
 
 kotlin {
     explicitApi()
