@@ -24,12 +24,19 @@ import kotlinx.serialization.Serializable
 @Composable
 expect fun containerPlacement(): String?
 
-/** A sign-in flow on one display that is replaced by the tab display, as many apps start. */
+/** How many child controllers the app's root view controller has, or null where not applicable. */
+@Composable
+expect fun rootChildCount(): Int?
+
+/**
+ * A sign-in flow on one display that is replaced by the tab display, as many apps start. Signing
+ * out returns to the sign-in display.
+ */
 @Composable
 fun SwapApp() {
     var signedIn by rememberSaveable { mutableStateOf(false) }
     if (signedIn) {
-        TabsApp()
+        TabsApp(onSignOut = { signedIn = false })
     } else {
         val backStack = rememberNavBackStack(config, SignIn)
         NativeNavDisplay(
@@ -39,6 +46,7 @@ fun SwapApp() {
                 entry<SignIn>(metadata = NativeNavigation.title("Sign in")) {
                     Screen(backStack.joinToString(" > ")) {
                         BasicText("container=${containerPlacement() ?: "?"}")
+                        BasicText("root children=${rootChildCount() ?: "?"}")
                         Button("Continue") { signedIn = true }
                     }
                 }

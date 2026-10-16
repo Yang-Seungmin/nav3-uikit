@@ -8,10 +8,14 @@ class SampleUITestCase: XCTestCase {
     /// The `NAV3_SAMPLE` value to launch with, or nil for the single-stack sample.
     var sample: String? { nil }
 
+    /// Extra launch environment, such as `NAV3_LAYOUT`.
+    var environment: [String: String] { [:] }
+
     override func setUp() {
         continueAfterFailure = false
         app = XCUIApplication()
         if let sample { app.launchEnvironment["NAV3_SAMPLE"] = sample }
+        environment.forEach { app.launchEnvironment[$0.key] = $0.value }
         if let host = ProcessInfo.processInfo.environment["NAV3_HOST"] {
             app.launchEnvironment["NAV3_HOST"] = host
         }
@@ -19,9 +23,9 @@ class SampleUITestCase: XCTestCase {
     }
 
     /// The container placement the sample reports for the host the tests run with.
-    var expectedPlacement: String {
-        ProcessInfo.processInfo.environment["NAV3_HOST"] == "interop" ? "container=embedded" : "container=root"
-    }
+    var interop: Bool { ProcessInfo.processInfo.environment["NAV3_HOST"] == "interop" }
+
+    var expectedPlacement: String { interop ? "container=embedded" : "container=root" }
 
     func element(_ label: String) -> XCUIElement {
         app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", label)).firstMatch
@@ -208,8 +212,9 @@ final class StandardAppUITests: SampleUITestCase {
 final class RootSwapUITests: SampleUITestCase {
     override var sample: String? { "swap" }
 
-    func testReplacingDisplayKeepsContainerInRoot() {
-        XCTAssertTrue(element(expectedPlacement).waitForExistence(timeout: 5))
+    func testReplacingDisplayMovesTabsToRoot() {
+        // A NativeNavDisplay stays in Compose, so Compose content around it stays visible.
+        XCTAssertTrue(element("container=embedded").waitForExistence(timeout: 5))
         tap("Continue")
         expectBackStack("Home: Home")
         settle()
@@ -221,5 +226,83 @@ final class RootSwapUITests: SampleUITestCase {
         expectBackStack("Home: Home > Detail(id=1)")
         tapBack()
         expectBackStack("Home: Home")
+    }
+
+    /// Each time the tab display leaves, its container leaves the root too, so after signing out
+    /// only the Compose view is left there.
+    func testSignedOutRootHoldsOnlyCompose() {
+        for _ in 0..<3 {
+            expectBackStack("SignIn")
+            if !interop { expectVisible("root children=1") }
+            tap("Continue")
+            expectBackStack("Home: Home")
+            settle()
+            tap("Sign out")
+        }
+        expectBackStack("SignIn")
+        settle()
+        if !interop { expectVisible("root children=1") }
+    }
+}
+
+/// `NAV3_LAYOUT=plain`: the single-stack sample called without a modifier, as a call site copied
+/// from `NavDisplay` may be. The display still fills the screen.
+final class DefaultSizeUITests: SampleUITestCase {
+    override var environment: [String: String] { ["NAV3_LAYOUT": "plain"] }
+
+    func testDisplayWithoutModifierShowsScreens() {
+        expectBackStack("Home")
+        tap("Open detail 1")
+        expectBackStack("Home > Detail(id=1)")
+        tapBack()
+        expectBackStack("Home")
+    }
+}
+
+/// `NAV3_LAYOUT=bar`: the single-stack sample above a Compose bar of the app's own. The bar stays
+/// visible under either root controller.
+final class ComposeBarUITests: SampleUITestCase {
+    override var environment: [String: String] { ["NAV3_LAYOUT": "bar"] }
+
+    func testComposeBarOutsideDisplayStaysVisible() {
+        expectBackStack("Home")
+        expectVisible("App bar")
+        tap("Open detail 1")
+        expectBackStack("Home > Detail(id=1)")
+        expectVisible("App bar")
+        snapshot("app-bar")
+        tapBack()
+        expectBackStack("Home")
+    }
+}
+
+/// `NAV3_SAMPLE=restart`: every tab gets a new root when a flow finishes, sometimes while another
+/// tab is selected in the same frame. Each tab's UINavigationController must then hold exactly
+/// the screens of its back stack ("native=1,1").
+final class TabRestartUITests: SampleUITestCase {
+    override var sample: String? { "restart" }
+
+    func testRestartFromTabRoot() {
+        expectBackStack("First: TabRoot(session=0, tab=0)")
+        expectVisible("native=1,1")
+        tap("Restart on Second")
+        expectBackStack("Second: TabRoot(session=1, tab=1)")
+        expectVisible("native=1,1")
+        tap("Restart on Second")
+        expectBackStack("Second: TabRoot(session=2, tab=1)")
+        expectVisible("native=1,1")
+    }
+
+    func testRestartFromOpenFlow() {
+        tap("Open flow")
+        expectBackStack("First: TabRoot(session=0, tab=0) > Detail(id=1)")
+        tap("Finish on Second")
+        expectBackStack("Second: TabRoot(session=1, tab=1)")
+        expectVisible("native=1,1")
+        tap("Open flow")
+        expectBackStack("Second: TabRoot(session=1, tab=1) > Detail(id=1)")
+        tap("Finish on First")
+        expectBackStack("First: TabRoot(session=2, tab=0)")
+        expectVisible("native=1,1")
     }
 }

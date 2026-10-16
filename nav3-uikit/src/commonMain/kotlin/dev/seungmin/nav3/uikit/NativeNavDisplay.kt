@@ -30,6 +30,10 @@ import androidx.navigationevent.NavigationEvent
  * transitions, the edge swipe-back gesture, the native navigation bar, and sheets. Other platforms
  * pass every parameter on to [androidx.navigation3.ui.NavDisplay].
  *
+ * On iOS the native container fills the space [modifier] leaves it, because Compose cannot measure
+ * a UIKit view's content. A call site without `Modifier.fillMaxSize()` therefore shows its screens
+ * as it does with `NavDisplay`.
+ *
  * On iOS the transition parameters, [sizeTransform], [contentAlignment],
  * [sceneDecoratorStrategies], and [sharedTransitionScope] have no effect, because UIKit animates
  * the transitions. [sceneStrategies] run as they do in `NavDisplay`: an entry that a strategy shows

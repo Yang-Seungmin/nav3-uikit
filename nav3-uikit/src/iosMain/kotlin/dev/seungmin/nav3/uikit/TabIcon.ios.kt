@@ -27,7 +27,7 @@ import platform.UIKit.UIScreen
 private const val TAB_ICON_POINTS = 25f
 
 /** The image a tab bar shows for [tab]: its SF Symbol, or its painter drawn as a template image. */
-internal fun tabImage(tab: NativeTab<*>): UIImage? =
+internal fun tabImage(tab: TabLabel): UIImage? =
     tab.systemImage?.let { UIImage.systemImageNamed(it) } ?: tab.icon?.toTemplateImage()
 
 @OptIn(ExperimentalForeignApi::class)

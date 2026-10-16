@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
@@ -121,6 +122,8 @@ fun App() {
     when (launchFlag("NAV3_SAMPLE")) {
         "tabs" -> TabsApp()
         "swap" -> SwapApp()
+        "restart" -> RestartApp()
+        "stack-tabs" -> StackTabsApp()
         else -> StackApp()
     }
 }
@@ -131,94 +134,114 @@ private fun StackApp() {
         val backStack = rememberNavBackStack(config, Home)
         val describe = { backStack.joinToString(" > ") { it.toString() } }
 
-        NativeNavDisplay(
-            backStack = backStack,
-            modifier = Modifier.fillMaxSize(),
-            onBack = {
-                if (backStack.lastOrNull() == Locked && LockState.locked) {
-                    EventLog.log("onBack refused")
-                } else {
-                    backStack.removeLastOrNull()
-                    EventLog.log("onBack -> ${describe()}")
-                }
-            },
-            entryDecorators = when (launchFlag("NAV3_DECORATORS")) {
-                "none" -> emptyList()
-                "saveable" -> listOf(rememberSaveableStateHolderNavEntryDecorator())
-                "viewmodel" -> listOf(rememberViewModelStoreNavEntryDecorator())
-                else -> listOf(
-                    rememberSaveableStateHolderNavEntryDecorator(),
-                    rememberViewModelStoreNavEntryDecorator(),
-                )
-            },
-            sceneStrategies = listOf(DialogSceneStrategy()),
-            entryProvider = entryProvider {
-                labEntries(backStack, describe)
-                entry<Home>(metadata = NativeNavigation.title("Home", large = true)) {
-                    Screen(describe()) {
-                        var plain by remember { mutableIntStateOf(0) }
-                        var saved by rememberSaveable { mutableIntStateOf(0) }
-                        Button("remember: $plain") { plain++ }
-                        Button("rememberSaveable: $saved") { saved++ }
-                        Button("Open detail 1") { backStack += Detail(1) }
-                        Button("Open settings sheet") { backStack += Settings }
-                        Button("Open immersive") { backStack += Immersive }
-                        Button("Push two at once") {
-                            backStack += Detail(1)
-                            backStack += Detail(2)
-                        }
-                        Button("Push ten") { repeat(10) { backStack += Detail(it + 1) } }
-                        Button("Open lab") { backStack += Lab }
-                        var live by remember { mutableStateOf<Int?>(null) }
-                        val scope = rememberCoroutineScope()
-                        Button("Live controllers: ${live ?: "?"}") {
-                            scope.launch { live = liveViewControllerCount() }
-                        }
-                        EventList()
+        // NAV3_LAYOUT=plain passes no modifier, as a call site copied from NavDisplay may.
+        // NAV3_LAYOUT=bar puts the display above a Compose bar of the app's own.
+        val display: @Composable (Modifier) -> Unit = { modifier ->
+            NativeNavDisplay(
+                backStack = backStack,
+                modifier = modifier,
+                onBack = {
+                    if (backStack.lastOrNull() == Locked && LockState.locked) {
+                        EventLog.log("onBack refused")
+                    } else {
+                        backStack.removeLastOrNull()
+                        EventLog.log("onBack -> ${describe()}")
                     }
-                }
-                entry<Detail>(metadata = { NativeNavigation.title("Detail ${it.id}") }) { key ->
-                    val vm = viewModel { DetailViewModel(key.id) }
-                    Screen(describe()) {
-                        Button("ViewModel taps: ${vm.taps}") { vm.taps++ }
-                        Button("Push detail ${key.id + 1}") { backStack += Detail(key.id + 1) }
-                        Button("Open settings sheet") { backStack += Settings }
-                        Button("Pop to root") {
-                            while (backStack.size > 1) backStack.removeLastOrNull()
-                        }
-                        Button("Replace with detail 100") {
-                            backStack.removeLastOrNull()
-                            backStack += Detail(100)
+                },
+                entryDecorators = when (launchFlag("NAV3_DECORATORS")) {
+                    "none" -> emptyList()
+                    "saveable" -> listOf(rememberSaveableStateHolderNavEntryDecorator())
+                    "viewmodel" -> listOf(rememberViewModelStoreNavEntryDecorator())
+                    else -> listOf(
+                        rememberSaveableStateHolderNavEntryDecorator(),
+                        rememberViewModelStoreNavEntryDecorator(),
+                    )
+                },
+                sceneStrategies = listOf(DialogSceneStrategy()),
+                entryProvider = entryProvider {
+                    labEntries(backStack, describe)
+                    entry<Home>(metadata = NativeNavigation.title("Home", large = true)) {
+                        Screen(describe()) {
+                            var plain by remember { mutableIntStateOf(0) }
+                            var saved by rememberSaveable { mutableIntStateOf(0) }
+                            Button("remember: $plain") { plain++ }
+                            Button("rememberSaveable: $saved") { saved++ }
+                            Button("Open detail 1") { backStack += Detail(1) }
+                            Button("Open settings sheet") { backStack += Settings }
+                            Button("Open immersive") { backStack += Immersive }
+                            Button("Push two at once") {
+                                backStack += Detail(1)
+                                backStack += Detail(2)
+                            }
+                            Button("Push ten") { repeat(10) { backStack += Detail(it + 1) } }
+                            Button("Open lab") { backStack += Lab }
+                            var live by remember { mutableStateOf<Int?>(null) }
+                            val scope = rememberCoroutineScope()
+                            Button("Live controllers: ${live ?: "?"}") {
+                                scope.launch { live = liveViewControllerCount() }
+                            }
+                            EventList()
                         }
                     }
-                }
-                entry<Settings>(
-                    metadata = NativeNavigation.sheet(listOf(SheetDetent.Medium, SheetDetent.Large)),
-                ) {
-                    Screen(describe()) {
-                        BasicText("Settings sheet", style = TextStyle(fontSize = 22.sp))
-                        Button("Open filter sheet") { backStack += Filter }
-                        Button("Close sheet") { backStack.removeLastOrNull() }
-                    }
-                }
-                entry<Filter>(metadata = NativeNavigation.sheet()) {
-                    Screen(describe()) {
-                        BasicText("Filter sheet", style = TextStyle(fontSize = 22.sp))
-                        Button("Close all sheets") {
-                            while (backStack.lastOrNull() is Settings || backStack.lastOrNull() is Filter) {
+                    entry<Detail>(metadata = { NativeNavigation.title("Detail ${it.id}") }) { key ->
+                        val vm = viewModel { DetailViewModel(key.id) }
+                        Screen(describe()) {
+                            Button("ViewModel taps: ${vm.taps}") { vm.taps++ }
+                            Button("Push detail ${key.id + 1}") { backStack += Detail(key.id + 1) }
+                            Button("Open settings sheet") { backStack += Settings }
+                            Button("Pop to root") {
+                                while (backStack.size > 1) backStack.removeLastOrNull()
+                            }
+                            Button("Replace with detail 100") {
                                 backStack.removeLastOrNull()
+                                backStack += Detail(100)
                             }
                         }
                     }
-                }
-                entry<Immersive>(metadata = NativeNavigation.navigationBarHidden()) {
-                    Screen(describe()) {
-                        BasicText("No navigation bar here", style = TextStyle(fontSize = 22.sp))
-                        Button("Back") { backStack.removeLastOrNull() }
+                    entry<Settings>(
+                        metadata = NativeNavigation.sheet(listOf(SheetDetent.Medium, SheetDetent.Large)),
+                    ) {
+                        Screen(describe()) {
+                            BasicText("Settings sheet", style = TextStyle(fontSize = 22.sp))
+                            Button("Open filter sheet") { backStack += Filter }
+                            Button("Close sheet") { backStack.removeLastOrNull() }
+                        }
                     }
-                }
-            },
-        )
+                    entry<Filter>(metadata = NativeNavigation.sheet()) {
+                        Screen(describe()) {
+                            BasicText("Filter sheet", style = TextStyle(fontSize = 22.sp))
+                            Button("Close all sheets") {
+                                while (backStack.lastOrNull() is Settings || backStack.lastOrNull() is Filter) {
+                                    backStack.removeLastOrNull()
+                                }
+                            }
+                        }
+                    }
+                    entry<Immersive>(metadata = NativeNavigation.navigationBarHidden()) {
+                        Screen(describe()) {
+                            BasicText("No navigation bar here", style = TextStyle(fontSize = 22.sp))
+                            Button("Back") { backStack.removeLastOrNull() }
+                        }
+                    }
+                },
+            )
+        }
+        when (launchFlag("NAV3_LAYOUT")) {
+            "plain" -> display(Modifier)
+            "bar" -> Column(Modifier.fillMaxSize()) {
+                display(Modifier.weight(1f))
+                BasicText(
+                    "App bar",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(LocalAccent.current)
+                        .navigationBarsPadding()
+                        .padding(16.dp),
+                    style = TextStyle(color = Color.White),
+                )
+            }
+            else -> display(Modifier.fillMaxSize())
+        }
     }
 }
 

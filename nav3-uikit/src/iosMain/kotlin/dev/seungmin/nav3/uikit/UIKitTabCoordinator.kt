@@ -46,7 +46,7 @@ internal class UIKitTabCoordinator<T : Any>(
     }
 
     fun update(
-        tabs: List<NativeTab<T>>,
+        tabs: List<TabLabel>,
         entries: List<List<NavEntry<T>>>,
         overlays: List<Map<Any, @Composable () -> Unit>>,
         selectedTab: Int,
@@ -66,11 +66,13 @@ internal class UIKitTabCoordinator<T : Any>(
 
             val navigator = navigators[index]
             navigator.parentLocals.value = parentLocals
-            navigator.setEntries(entries[index], overlays[index])
+            // Only the tab that stays on screen animates. UIKit leaves a tab's transition half
+            // done when the tab is switched away during it, with the old screens still stacked.
+            navigator.setEntries(entries[index], overlays[index], animate = index == selectedTab)
         }
 
         val wanted = uiTabs[selectedTab]
-        if (tabBarController.selectedTab !== wanted) tabBarController.selectedTab = wanted
+        if (tabBarController.selectedTab != wanted) tabBarController.selectedTab = wanted
     }
 
     fun dispose() {
@@ -80,6 +82,19 @@ internal class UIKitTabCoordinator<T : Any>(
         navigators.clear()
     }
 
+    /**
+     * Whether UIKit may switch to [tab] itself. A tab with no entries would show an empty screen
+     * until the app's next frame, so its selection is reported instead and [update] selects the
+     * tab once the app gives it entries.
+     */
+    fun shouldSelect(tab: UITab): Boolean {
+        val index = uiTabs.indexOfFirst { it.identifier == tab.identifier }
+        if (index == -1 || !navigators[index].isEmpty) return true
+        onTabSelected(index)
+        onNativeChange()
+        return false
+    }
+
     fun onUserSelected(tab: UITab) {
         val index = uiTabs.indexOfFirst { it.identifier == tab.identifier }
         if (index == -1) return
@@ -87,7 +102,7 @@ internal class UIKitTabCoordinator<T : Any>(
         onNativeChange()
     }
 
-    private fun rebuild(tabs: List<NativeTab<T>>, parentLocals: CompositionLocalContext) {
+    private fun rebuild(tabs: List<TabLabel>, parentLocals: CompositionLocalContext) {
         navigators.forEach { it.dispose() }
         navigators.clear()
         uiTabs.clear()
@@ -111,7 +126,7 @@ internal class UIKitTabCoordinator<T : Any>(
 }
 
 // A top-level function so the provider block, which UIKit keeps, captures only the controller.
-private fun tabFor(index: Int, tab: NativeTab<*>, controller: UIViewController): UITab =
+private fun tabFor(index: Int, tab: TabLabel, controller: UIViewController): UITab =
     UITab(tab.title, tabImage(tab), "tab-$index") { controller }
 
 @OptIn(ExperimentalNativeApi::class)
@@ -119,6 +134,10 @@ private class TabBarDelegate(
     coordinator: UIKitTabCoordinator<*>,
 ) : NSObject(), UITabBarControllerDelegateProtocol {
     private val coordinator = WeakReference(coordinator)
+
+    @ObjCSignatureOverride
+    override fun tabBarController(tabBarController: UITabBarController, shouldSelectTab: UITab): Boolean =
+        coordinator.value?.shouldSelect(shouldSelectTab) ?: true
 
     @ObjCSignatureOverride
     override fun tabBarController(

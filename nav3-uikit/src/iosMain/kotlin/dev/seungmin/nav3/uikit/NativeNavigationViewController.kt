@@ -32,14 +32,14 @@ private const val ATTACH_RETRY_NANOS = 16_000_000L
  * Root view controller for an app whose screens are shown by [NativeTabDisplay] or
  * [NativeNavDisplay]. Use it in place of `ComposeUIViewController`.
  *
- * One display at a time does not embed its native container in Compose. Its `UITabBarController`
- * or `UINavigationController` becomes a child of this root, next to the Compose view, and fills
- * the screen; the display's `modifier` is ignored. That is the first display composed in
- * [content], and when it leaves composition, the display that has been waiting longest takes its
- * place, so swapping one root display for another (a sign-in flow for the main tabs, say) keeps
- * the new container in the root. A native container embedded in Compose works on most iPhones,
- * but on an open iPhone Duo the system does not show its tab bar in the vertical bar. Other
- * displays, and every display when this root is not used, are embedded through UIKit interop.
+ * One [NativeTabDisplay] at a time does not embed its `UITabBarController` in Compose. The tab bar
+ * controller becomes a child of this root, above the Compose view, and fills the screen; the
+ * display's `modifier` is ignored, and Compose content drawn outside the display is covered. That
+ * is the first tab display composed in [content], and when it leaves composition, the tab display
+ * that has been waiting longest takes its place. A tab bar controller embedded in Compose works on
+ * most iPhones, but on an open iPhone Duo the system does not show its tab bar in the vertical bar.
+ * [NativeNavDisplay], and every display when this root is not used, is embedded through UIKit
+ * interop, so Compose content around it stays visible.
  *
  * [configure] works as in `ComposeUIViewController`. It configures the root's Compose view and
  * also the controller that hosts each entry of the displays inside it.
@@ -62,7 +62,13 @@ public fun NativeNavigationViewController(
 
 internal val LocalNativeRootHost = staticCompositionLocalOf<NativeRootHost?> { null }
 
-/** Lets one native container at a time sit directly in the root, above the Compose view. */
+/**
+ * Lets one native container at a time sit directly in the root, above the Compose view.
+ *
+ * UIKit objects are compared with `==` (`isEqual:`), not `===`. The root is only held weakly, and
+ * Kotlin/Native can hand out a new Kotlin reference for the same Objective-C object, so `===` can
+ * be false for the root controller itself.
+ */
 @OptIn(ExperimentalNativeApi::class)
 internal class NativeRootHost(
     root: UIViewController,
@@ -86,7 +92,7 @@ internal class NativeRootHost(
         if (owner !== claim) return
         val root = root.value ?: return
         val parent = controller.parentViewController
-        if (parent === root) return
+        if (parent == root) return
         if (parent != null) {
             // The container was embedded until now. Compose removes it from its interop parent
             // in a transaction at its next render; moving it before that would let the removal
@@ -103,7 +109,7 @@ internal class NativeRootHost(
         waiting.remove(claim)
         if (owner !== claim) return
         owner = null
-        if (controller.parentViewController === root.value) {
+        if (controller.parentViewController == root.value) {
             controller.willMoveToParentViewController(null)
             controller.view.removeFromSuperview()
             controller.removeFromParentViewController()

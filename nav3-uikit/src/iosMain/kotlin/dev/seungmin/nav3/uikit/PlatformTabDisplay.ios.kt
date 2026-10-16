@@ -14,7 +14,7 @@ import androidx.navigation3.runtime.NavEntry
 
 @Composable
 internal actual fun <T : Any> PlatformTabDisplay(
-    tabs: List<NativeTab<T>>,
+    tabs: List<TabLabel>,
     entries: List<List<NavEntry<T>>>,
     selectedTab: Int,
     onTabSelected: (index: Int) -> Unit,
@@ -45,5 +45,34 @@ internal actual fun <T : Any> PlatformTabDisplay(
     SideEffect { coordinator.update(tabs, entries, overlays, selectedTab, parentLocals) }
     DisposableEffect(coordinator) { onDispose { coordinator.dispose() } }
 
-    NativeContainer(coordinator.tabBarController, modifier)
+    // On an open iPhone Duo the tab bar only appears in the vertical bar when the tab bar
+    // controller is not inside Compose, so it goes to NativeNavigationViewController's root.
+    if (rememberRootPlacement(coordinator.tabBarController) == RootPlacement.Embedded) {
+        EmbeddedContainer(coordinator.tabBarController, modifier)
+    }
+}
+
+@Composable
+internal actual fun <T : Any> PlatformStackTabDisplay(
+    tabs: List<TabLabel>,
+    entries: List<NavEntry<T>>,
+    parts: TabParts,
+    onTabSelected: (index: Int) -> Unit,
+    onBack: () -> Unit,
+    options: NavDisplayOptions<T>,
+    tabBar: @Composable () -> Unit,
+    modifier: Modifier,
+) {
+    // Only the selected tab is on screen, so a native pop always removes the last entries of the
+    // back stack, whichever tab reports it.
+    PlatformTabDisplay(
+        tabs = tabs,
+        entries = parts.ranges.map { range -> range?.let { entries.subList(it.first, it.last + 1) } ?: emptyList() },
+        selectedTab = parts.selected,
+        onTabSelected = onTabSelected,
+        onBack = { onBack() },
+        options = options,
+        tabBar = tabBar,
+        modifier = modifier,
+    )
 }

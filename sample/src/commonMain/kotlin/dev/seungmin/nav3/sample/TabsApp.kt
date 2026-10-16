@@ -40,8 +40,9 @@ expect fun verticalBarEdge(): String?
 /** A screen pushed with the tab bar hidden. */
 @Serializable data object Focus : Route
 
+/** [onSignOut], when set, adds a Sign out button to the Home tab. */
 @Composable
-fun TabsApp() {
+fun TabsApp(onSignOut: (() -> Unit)? = null) {
     CompositionLocalProvider(LocalAccent provides Color(0xFF8A3FD1)) {
         val home = rememberNavBackStack(config, Home)
         val search = rememberNavBackStack(config, SearchHome)
@@ -76,6 +77,7 @@ fun TabsApp() {
             entryProvider = entryProvider {
                 entry<Home>(metadata = NativeNavigation.title("Home", large = true)) {
                     TabScreen(names[selected], describe(current)) {
+                        onSignOut?.let { Button("Sign out", it) }
                         var plain by remember { mutableIntStateOf(0) }
                         var saved by rememberSaveable { mutableIntStateOf(0) }
                         Button("remember: $plain") { plain++ }

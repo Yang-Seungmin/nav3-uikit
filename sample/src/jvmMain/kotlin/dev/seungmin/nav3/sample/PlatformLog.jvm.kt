@@ -13,3 +13,9 @@ actual fun verticalBarEdge(): String? = null
 
 @androidx.compose.runtime.Composable
 actual fun containerPlacement(): String? = null
+
+@androidx.compose.runtime.Composable
+actual fun nativeStackSizes(): String? = null
+
+@androidx.compose.runtime.Composable
+actual fun rootChildCount(): Int? = null

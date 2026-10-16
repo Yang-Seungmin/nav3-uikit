@@ -1,5 +1,6 @@
 package dev.seungmin.nav3.uikit
 
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
@@ -14,6 +15,7 @@ import androidx.compose.ui.viewinterop.UIKitInteropProperties
 import androidx.compose.ui.viewinterop.UIKitViewController
 import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.scene.rememberSceneState
+import platform.UIKit.UIViewController
 
 @Composable
 internal actual fun <T : Any> PlatformNavDisplay(
@@ -48,19 +50,19 @@ internal actual fun <T : Any> PlatformNavDisplay(
     }
     DisposableEffect(coordinator) { onDispose { coordinator.dispose() } }
 
-    NativeContainer(coordinator.navigationController, modifier)
+    EmbeddedContainer(coordinator.navigationController, modifier)
 }
 
 /**
- * Places a display's native container: in the root of [NativeNavigationViewController] when it can
- * have it, otherwise embedded in Compose through UIKit interop.
+ * Embeds a display's native container in Compose through UIKit interop. A UIKit view has no size
+ * of its own to measure, so the container fills the space [modifier] leaves it, as `NavDisplay`
+ * does with screens that fill the screen.
  */
 @Composable
-internal fun NativeContainer(controller: platform.UIKit.UIViewController, modifier: Modifier) {
-    if (rememberRootPlacement(controller) != RootPlacement.Embedded) return
+internal fun EmbeddedContainer(controller: UIViewController, modifier: Modifier) {
     UIKitViewController(
         factory = { controller },
-        modifier = modifier,
+        modifier = modifier.fillMaxSize(),
         properties = UIKitInteropProperties(
             interactionMode = UIKitInteropInteractionMode.NonCooperative,
             isNativeAccessibilityEnabled = true,

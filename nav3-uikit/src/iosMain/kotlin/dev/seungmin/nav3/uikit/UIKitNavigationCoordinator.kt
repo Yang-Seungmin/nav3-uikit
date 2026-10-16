@@ -81,9 +81,14 @@ internal class UIKitNavigationCoordinator<T : Any>(
 
     /**
      * Shows [entries]. [overlays] holds, by content key, the content of each entry that the scene
-     * strategies show in an overlay scene.
+     * strategies show in an overlay scene. With [animate] false, the change is applied without a
+     * transition even while the container is on screen.
      */
-    fun setEntries(entries: List<NavEntry<T>>, overlays: Map<Any, @Composable () -> Unit>) {
+    fun setEntries(
+        entries: List<NavEntry<T>>,
+        overlays: Map<Any, @Composable () -> Unit>,
+        animate: Boolean = true,
+    ) {
         if (disposed) return
         latestEntries = entries
         latestOverlays = overlays
@@ -92,7 +97,7 @@ internal class UIKitNavigationCoordinator<T : Any>(
         val firstModal = entries.indexOfFirst { it.isModal() }.let { if (it == -1) entries.size else it }
         // The root entry is always pushed; there is nothing to present a modal from otherwise.
         val pushCount = if (entries.isEmpty()) 0 else maxOf(firstModal, 1)
-        val animated = hasApplied && navigationController.view.window != null
+        val animated = animate && hasApplied && navigationController.view.window != null
 
         syncStack(entries.subList(0, pushCount), animated)
         syncModals(entries.subList(pushCount, entries.size), animated)
@@ -101,6 +106,9 @@ internal class UIKitNavigationCoordinator<T : Any>(
         updateTopChrome()
         hasApplied = true
     }
+
+    /** Whether the last [setEntries] had no entries, so the container shows nothing. */
+    val isEmpty: Boolean get() = latestEntries.isEmpty()
 
     fun dispose() {
         disposed = true
@@ -196,7 +204,7 @@ internal class UIKitNavigationCoordinator<T : Any>(
     }
 
     fun onWillShow(viewController: UIViewController) {
-        val host = stack.firstOrNull { it.viewController === viewController } ?: return
+        val host = stack.firstOrNull { it.viewController == viewController } ?: return
         navigationController.setNavigationBarHidden(!host.showsNavigationBar, animated = true)
     }
 
@@ -249,7 +257,7 @@ internal class UIKitNavigationCoordinator<T : Any>(
             navigationController.interactiveContentPopGestureRecognizer?.enabled = enabled
         }
         // During a push or pop the top view controller is already the incoming one.
-        if (navigationController.topViewController === top.viewController) {
+        if (navigationController.topViewController == top.viewController) {
             val hidden = !top.showsNavigationBar
             if (navigationController.isNavigationBarHidden() != hidden) {
                 navigationController.setNavigationBarHidden(hidden, animated = hasApplied)

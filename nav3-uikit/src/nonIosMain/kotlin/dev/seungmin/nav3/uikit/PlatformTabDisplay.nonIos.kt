@@ -12,7 +12,7 @@ import androidx.navigationevent.compose.rememberNavigationEventState
 
 @Composable
 internal actual fun <T : Any> PlatformTabDisplay(
-    tabs: List<NativeTab<T>>,
+    tabs: List<TabLabel>,
     entries: List<List<NavEntry<T>>>,
     selectedTab: Int,
     onTabSelected: (index: Int) -> Unit,
@@ -45,4 +45,36 @@ internal actual fun <T : Any> PlatformTabDisplay(
         isBackEnabled = selectedTab != 0 && entries[selectedTab].size <= 1,
         onBackCompleted = { onTabSelected(0) },
     )
+}
+
+@Composable
+internal actual fun <T : Any> PlatformStackTabDisplay(
+    tabs: List<TabLabel>,
+    entries: List<NavEntry<T>>,
+    parts: TabParts,
+    onTabSelected: (index: Int) -> Unit,
+    onBack: () -> Unit,
+    options: NavDisplayOptions<T>,
+    tabBar: @Composable () -> Unit,
+    modifier: Modifier,
+) {
+    // The whole back stack goes to NavDisplay, so back crosses from one tab to the one before it
+    // exactly as it did before the app switched to this display.
+    Column(modifier) {
+        Box(Modifier.weight(1f)) {
+            NavDisplay(
+                entries = entries,
+                contentAlignment = options.contentAlignment,
+                sceneStrategies = options.sceneStrategies,
+                sceneDecoratorStrategies = options.sceneDecoratorStrategies,
+                sharedTransitionScope = options.sharedTransitionScope,
+                sizeTransform = options.sizeTransform,
+                transitionSpec = options.transitionSpec,
+                popTransitionSpec = options.popTransitionSpec,
+                predictivePopTransitionSpec = options.predictivePopTransitionSpec,
+                onBack = onBack,
+            )
+        }
+        tabBar()
+    }
 }
