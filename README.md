@@ -154,7 +154,7 @@ xcodebuild -project iosApp/iosApp.xcodeproj -scheme iosApp \
 
 `./gradlew :nav3-uikit:jvmTest` runs the unit tests of how a single back stack is split into tabs.
 
-`./gradlew :nav3-uikit:publishToMavenLocal` publishes `dev.seungmin.nav3:nav3-uikit` with Android, JVM, and iOS variants, so an Android, desktop, or Kotlin Multiplatform app depends on that one coordinate and Gradle picks the variant. The version is `0.1.0-SNAPSHOT` unless the `nav3.version` Gradle property sets another.
+`./gradlew :nav3-uikit:publishToMavenLocal` publishes `dev.seungmin.nav3:nav3-uikit` with Android, JVM, and iOS variants, so an Android, desktop, or Kotlin Multiplatform app depends on that one coordinate and Gradle picks the variant. The version is the default in `nav3-uikit/build.gradle.kts` unless the `nav3.version` Gradle property sets another. Versions keep an `-expN` suffix, such as `0.1.0-exp4`, raised by one for each experimental build, until the library is published to a public Maven repository.
 
 - `NativeNavigationUITests` drives the single-stack sample and checks the `backStack: ...` label at the top of each screen. Setting `TEST_RUNNER_NAV3_DECORATORS` to `none`, `saveable`, or `viewmodel` changes which decorators the sample uses.
 - `TabNavigationUITests` drives the tab sample: tab switching, per-tab state, reselecting a tab, programmatic selection, pushing into a hidden tab, sheets, a screen that hides the tab bar, where the tab container sits, and controller release.

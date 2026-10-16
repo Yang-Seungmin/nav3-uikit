@@ -7,7 +7,9 @@ plugins {
 }
 
 group = "dev.seungmin.nav3"
-version = providers.gradleProperty("nav3.version").getOrElse("0.1.0-SNAPSHOT")
+// Versions keep the -expN suffix, raised by one for each experimental build, until the library
+// is published to a public Maven repository.
+version = providers.gradleProperty("nav3.version").getOrElse("0.1.0-exp4")
 
 kotlin {
     explicitApi()
