@@ -1,18 +1,16 @@
 # Releasing
 
-Pushing a tag `v<version>` runs `.github/workflows/release.yml`. The workflow uploads that version to the Central Portal and creates a GitHub release with notes generated from the merged pull requests and commits since the previous tag.
+Pushing a tag `v<version>` runs `.github/workflows/release.yml`. The workflow uploads that version to the Central Portal, which validates and publishes it without a manual step, waits until Maven Central has published it, and then creates a GitHub release with notes generated from the merged pull requests and commits since the previous tag. Pushing the tag therefore publishes the version.
 
 1. Set the version in the README's install snippet to the one being released and merge that change.
 2. Tag the merged commit and push the tag:
 
    ```sh
-   git tag v0.1.0-dev01
-   git push origin v0.1.0-dev01
+   git tag v0.1.0-dev02
+   git push origin v0.1.0-dev02
    ```
 
-3. Open the deployment in the [Central Portal](https://central.sonatype.com/publishing/deployments). After the Portal validates it, press **Publish**. The artifacts reach Maven Central within about half an hour.
-
-The GitHub release appears as soon as the upload succeeds, before **Publish**.
+The workflow usually takes 10 to 40 minutes, most of it waiting for Maven Central. Its deployment also appears in the [Central Portal](https://central.sonatype.com/publishing/deployments).
 
 ## Versions
 
@@ -22,11 +20,12 @@ A published version can never be changed or removed, so a fix needs a new versio
 
 ## When a deployment fails
 
-**Drop** in the Central Portal discards a deployment that failed validation or looks wrong. To retry the same version, also delete its GitHub release and tag, then push the tag again:
+A deployment that fails validation is never published, and the workflow fails without creating a GitHub release. The Portal shows the validation errors on the failed deployment; **Drop** discards it. To retry the same version after fixing the cause, move the tag to the fixed commit:
 
 ```sh
-gh release delete v<version> --cleanup-tag
-git tag -d v<version>
+git push origin :refs/tags/v<version>
+git tag -f v<version> <fixed commit>
+git push origin v<version>
 ```
 
 ## Secrets and the signing key

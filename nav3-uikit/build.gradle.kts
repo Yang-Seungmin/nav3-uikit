@@ -1,3 +1,5 @@
+import com.vanniktech.maven.publish.DeploymentValidation
+
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.compose.multiplatform)
@@ -11,8 +13,9 @@ group = "dev.seungmin.nav3"
 version = providers.gradleProperty("nav3.version").getOrElse("0.1.0-SNAPSHOT")
 
 mavenPublishing {
-    // The deployment waits in the Central Portal until someone presses Publish there.
-    publishToMavenCentral(automaticRelease = false)
+    // The upload task returns once Maven Central has published the deployment, so the release workflow creates
+    // the GitHub release only for versions that consumers can resolve.
+    publishToMavenCentral(automaticRelease = true, validateDeployment = DeploymentValidation.PUBLISHED)
     // Without a key, publishToMavenLocal works unsigned; the Central Portal rejects unsigned uploads.
     if (providers.gradleProperty("signingInMemoryKey").isPresent) {
         signAllPublications()
