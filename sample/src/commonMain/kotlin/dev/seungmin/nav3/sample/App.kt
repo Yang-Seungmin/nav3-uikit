@@ -114,6 +114,7 @@ fun App() {
         "swap" -> SwapApp()
         "restart" -> RestartApp()
         "stack-tabs" -> StackTabsApp()
+        "showcase" -> ShowcaseApp()
         else -> StackApp()
     }
 }

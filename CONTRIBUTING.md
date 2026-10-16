@@ -11,6 +11,7 @@
   | `swap` | A sign-in display that the tab sample replaces |
   | `restart` | Two tabs that get new roots when a flow finishes |
   | `stack-tabs` | The `commonui` recipe's `TopLevelBackStack` with three tabs |
+  | `showcase` | A travel app with realistic content, used for the README images. `NAV3_SHOWCASE` opens it on a pushed screen (`trip`), a sheet (`sheet`), or another tab (`saved`, `profile`); `NAV3_SHOWCASE=tour` plays the push, sheet, pop, and tab sequence of `docs/images/demo.gif` |
   | `swiftui-tabs`, `uikit-tabs` | A SwiftUI `TabView` and a plain `UITabBarController` without Compose, for comparing the system layout |
 
   In the single-stack sample, `NAV3_LAYOUT=plain` calls the display without a modifier and `NAV3_LAYOUT=bar` places it above a Compose bar of the app's own. `NAV3_HOST=interop` uses a plain `ComposeUIViewController` as the root, which embeds the native containers in Compose.

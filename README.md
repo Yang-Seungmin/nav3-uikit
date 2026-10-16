@@ -1,12 +1,19 @@
-# Nav3 UIKit
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
+    <img src="docs/images/hero-light.png" alt="Nav3 UIKit: the same Compose screens in native UIKit containers on iPhone, iPad, and a closed iPhone Duo, where the back button, bar buttons, and tab bar move into the vertical bar" width="880">
+  </picture>
+</p>
 
-**Native UIKit navigation for Compose Multiplatform apps built on Navigation 3.**
+<p align="center"><b>Native UIKit navigation for Compose Multiplatform apps built on Navigation 3.</b></p>
 
-![Status: experimental](https://img.shields.io/badge/status-experimental-orange)
-![Kotlin 2.4.20](https://img.shields.io/badge/Kotlin-2.4.20-7F52FF?logo=kotlin&logoColor=white)
-![Compose Multiplatform 1.12.1](https://img.shields.io/badge/Compose_Multiplatform-1.12.1-4285F4)
-![Platforms](https://img.shields.io/badge/platforms-iOS_|_Android_|_JVM-lightgrey)
-[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+<p align="center">
+  <img src="https://img.shields.io/badge/status-experimental-orange" alt="Status: experimental">
+  <img src="https://img.shields.io/badge/Kotlin-2.4.20-7F52FF?logo=kotlin&logoColor=white" alt="Kotlin 2.4.20">
+  <img src="https://img.shields.io/badge/Compose_Multiplatform-1.12.1-4285F4" alt="Compose Multiplatform 1.12.1">
+  <img src="https://img.shields.io/badge/platforms-iOS_|_Android_|_JVM-lightgrey" alt="Platforms: iOS, Android, JVM">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License: Apache 2.0"></a>
+</p>
 
 Rename `NavDisplay` to `NativeNavDisplay` and your iOS screens run in a real `UINavigationController`, with system swipe-back, large titles, and sheets. `NativeTabDisplay` adds a native `UITabBarController`. On Android and desktop, both fall back to `NavDisplay`.
 
@@ -29,6 +36,10 @@ Rename `NavDisplay` to `NativeNavDisplay` and your iOS screens run in a real `UI
 - **Sheets, titles, and bar buttons from metadata.** Entries opt into a large title, a sheet with medium or large detents, or a hidden navigation bar or tab bar. Screens can set the title and trailing buttons from their content.
 - **Back stack stays the source of truth.** Native pops call `onBack`. If the app refuses a pop, the screen is put back.
 - **iPhone Duo ready.** The tab bar and the back button move into the iPhone Duo vertical bar, laid out by UIKit itself.
+
+<p align="center">
+  <img src="docs/images/demo.gif" alt="A push, a sheet, a pop, and tab switches, each animated by UIKit" width="300">
+</p>
 
 ## Install
 
