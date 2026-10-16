@@ -1,0 +1,8 @@
+.gradle/
+build/
+.kotlin/
+.ref/
+local.properties
+iosApp/iosApp.xcodeproj/
+*.xcuserstate
+DerivedData/
